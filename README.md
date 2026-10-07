@@ -80,9 +80,8 @@ Dữ liệu được **đệm trong SQLite** (nến 6 giờ, cơ bản 24 giờ,
 
 ```
 fintech/
-├── app.py                  # điểm khởi động (local)
-├── api/index.py            # entrypoint serverless cho Vercel
-├── vercel.json             # cấu hình deploy Vercel (rewrites + functions)
+├── app.py                  # điểm khởi động local + entrypoint Vercel (zero-config)
+├── vercel.json             # cấu hình deploy Vercel (framework + functions)
 ├── requirements.txt
 ├── run.bat
 ├── data/fintech.db         # SQLite (tự tạo khi chạy local)
@@ -115,9 +114,10 @@ python tools/smoke_test.py    # cửa sổ 2 — kiểm thử 29 mục: trang, p
 
 Dự án đã được đóng gói sẵn cho Vercel (serverless):
 
-- **`api/index.py`** — entrypoint WSGI mà runtime `@vercel/python` tự nhận diện.
-- **`vercel.json`** — định tuyến mọi request vào hàm Flask (`rewrites`), cấu hình
-  `maxDuration: 60s` và `includeFiles: fintech/**` để đóng gói templates/static.
+- **`app.py`** — Vercel **tự nhận diện** ứng dụng Flask qua instance `app` (zero-config);
+  mọi request được định tuyến thẳng vào ứng dụng, **không cần `rewrites`**.
+- **`vercel.json`** — khai báo `framework: "flask"`, `maxDuration: 60s` và
+  `includeFiles: "fintech/**"` (giá trị **chuỗi** — không dùng mảng) để đóng gói templates/static.
 - **`.vercelignore`** — loại `data/`, `tools/`, bộ đệm khỏi bundle.
 - **`.python-version`** — chốt Python **3.12** cho Vercel (phiên bản mặc định của `@vercel/python`).
 - **`fintech/config.py`** — tự nhận diện `VERCEL=1`: chuyển SQLite sang `/tmp/finviet-pro`
@@ -136,6 +136,9 @@ vercel --prod        # deploy production
 
 Push mã nguồn lên GitHub → vào [vercel.com/new](https://vercel.com/new) → Import repository →
 giữ nguyên cấu hình mặc định (Vercel tự đọc `vercel.json` + `requirements.txt`) → Deploy.
+
+> 💡 Nếu trang chủ vẫn trả về trang 404 của Flask sau khi deploy: vào **Settings → Build &
+> Development → Framework Preset**, đặt **Flask**, sau đó bấm **Redeploy**.
 
 ### Lưu ý quan trọng khi chạy trên Vercel (serverless)
 

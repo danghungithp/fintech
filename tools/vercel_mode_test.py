@@ -1,4 +1,4 @@
-"""Local simulation of the Vercel runtime: import api/index.py with VERCEL=1."""
+"""Local simulation of the Vercel runtime: import app.py with VERCEL=1."""
 import os
 import shutil
 import sys
@@ -12,7 +12,9 @@ sys.path.insert(0, root)
 
 expected_db = os.path.join(root, ".vercel-data-test", "fintech.db")
 
-exec(compile(open("api/index.py", encoding="utf-8").read(), "api/index.py", "exec"))
+ns = {"__name__": "app", "__file__": "app.py"}
+exec(compile(open("app.py", encoding="utf-8").read(), "app.py", "exec"), ns)
+app = ns["app"]
 
 client = app.test_client()
 health = client.get("/api/health").get_json()
