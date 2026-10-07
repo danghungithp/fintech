@@ -1,0 +1,6 @@
+- HTTP error responses go through the local `api_error(message, status)` helper returning `jsonify({"error": ...})` rather than ad-hoc jsonify calls.
+- Integer query parameters are parsed via `_int_arg(name, default)` which clamps values with `min(..., cap)` to enforce upper bounds at the route boundary.
+- Domain-specific exceptions are caught per endpoint: `ValueError` maps to 400/409, `vietcap.VietcapError` maps to 502, and a final bare `except Exception` returns a user-facing 500 message.
+- All symbol inputs are normalized to uppercase before being passed to downstream layers (routes, db functions, market lookups).
+- SQLite writes use `ON CONFLICT(...) DO UPDATE SET ...` upsert patterns instead of separate insert-or-update branches.
+- JSON payloads written to SQLite's `extra` / `payload` columns are serialized with `json.dumps(..., ensure_ascii=False)` so Vietnamese text round-trips correctly.

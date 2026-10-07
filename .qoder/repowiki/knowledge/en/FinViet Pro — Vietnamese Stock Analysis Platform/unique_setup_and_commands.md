@@ -1,0 +1,1 @@
+`pip install -r requirements.txt && python app.py` (or double-click `run.bat` on Windows); smoke tests require two terminals: one running the server, another `python tools/smoke_test.py [base_url]`.

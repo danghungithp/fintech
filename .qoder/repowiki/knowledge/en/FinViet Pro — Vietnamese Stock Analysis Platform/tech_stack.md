@@ -1,0 +1,1 @@
+Python 3.10+ / Flask ≥3.0 as the sole third-party dependency; SQLite for persistence; TradingView lightweight-charts for frontend charts; standard library `urllib` used by both the Vietcap client and the `tools/` scripts.

@@ -1,0 +1,1 @@
+Root of the FinViet Pro Flask application, wiring the fintech package (analysis, screener, portfolio, alerts) with SQLite-backed Vietcap data and dev tooling.

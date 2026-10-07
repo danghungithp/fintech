@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Tổng quan{% endblock %}
+{% block header_title %}Tổng quan thị trường{% endblock %}
+
+{% block content %}
+<div class="grid-stats">
+  <div class="stat-card accent">
+    <span class="label">VNINDEX</span>
+    <div class="value tnum" id="idx-vnindex-price">—</div>
+    <div class="delta tnum" id="idx-vnindex-change">—</div>
+    <div class="spark" id="idx-vnindex-spark"></div>
+  </div>
+  <div class="stat-card">
+    <span class="label">VN30</span>
+    <div class="value tnum" id="idx-vn30-price">—</div>
+    <div class="delta tnum" id="idx-vn30-change">—</div>
+    <div class="spark" id="idx-vn30-spark"></div>
+  </div>
+  <div class="stat-card">
+    <span class="label">Giá trị danh mục</span>
+    <div class="value tnum" id="stat-portfolio-value">—</div>
+    <div class="delta tnum" id="stat-portfolio-pnl">—</div>
+  </div>
+  <div class="stat-card">
+    <span class="label">Cảnh báo chưa xử lý</span>
+    <div class="value tnum" id="stat-alerts">—</div>
+    <div class="delta muted" id="stat-alerts-note">Tín hiệu mua/bán &amp; cắt lỗ</div>
+  </div>
+</div>
+
+<section class="card mt-16">
+  <div class="flex-between flex-wrap">
+    <div>
+      <h2>Phân tích nhanh</h2>
+      <p class="sub">Nhập mã để xem ngay điểm mua/bán theo Fibonacci, Pivot và Kelly 1/2.</p>
+    </div>
+    <form class="symbol-form" id="quick-form" autocomplete="off">
+      <input class="input" id="quick-symbol" list="quick-symbol-suggest" data-symbol-input
+             placeholder="Mã CK — VD: FPT" style="width:200px;">
+      <datalist id="quick-symbol-suggest"></datalist>
+      <button class="btn btn-primary" type="submit">Phân tích</button>
+    </form>
+  </div>
+</section>
+
+<div class="dash-grid mt-16">
+  <div>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h3>Cơ hội mua từ lần sàng lọc gần nhất</h3>
+          <p class="sub" id="topsignals-sub">—</p>
+        </div>
+        <a class="btn btn-sm btn-ghost" href="/sang-loc">Sàng lọc ngay</a>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="topsignals-table">
+          <thead>
+            <tr>
+              <th>Mã</th><th>Tín hiệu</th><th class="num">Điểm</th><th class="num">Giá</th>
+              <th class="num">%Ngày</th><th class="num">Cổ tức</th><th class="num">Vùng mua</th>
+            </tr>
+          </thead>
+          <tbody><tr class="no-hover"><td colspan="7"><div class="loading-row"><span class="spinner"></span> Đang tải...</div></td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div><h3>Danh mục nắm giữ</h3><p class="sub">Lãi/lỗ theo giá đóng cửa gần nhất</p></div>
+        <a class="btn btn-sm btn-ghost" href="/danh-muc">Quản lý danh mục</a>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="positions-table">
+          <thead>
+            <tr><th>Mã</th><th class="num">KL</th><th class="num">Giá vốn</th><th class="num">Giá</th>
+            <th class="num">Lãi/Lỗ</th><th class="num">%</th><th>Tín hiệu</th><th class="num">Cắt lỗ</th></tr>
+          </thead>
+          <tbody><tr class="no-hover"><td colspan="8"><div class="loading-row"><span class="spinner"></span> Đang tải...</div></td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div>
+    <section class="card">
+      <div class="card-head">
+        <div><h3>Cảnh báo gần đây</h3><p class="sub">Tín hiệu mua · bán · cắt lỗ trong danh mục</p></div>
+        <button class="btn btn-sm btn-ghost" id="ack-all-btn">Đã xem hết</button>
+      </div>
+      <div class="alert-feed" id="alerts-feed">
+        <div class="loading-row"><span class="spinner"></span> Đang tải...</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div><h3>Phân tích gần đây</h3><p class="sub">Lưu tự động vào SQLite</p></div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="recent-table">
+          <thead><tr><th>Mã</th><th>Tín hiệu</th><th class="num">Điểm</th><th class="num">Giá</th><th>Thời gian</th></tr></thead>
+          <tbody><tr class="no-hover"><td colspan="5"><div class="loading-row"><span class="spinner"></span> Đang tải...</div></td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/chart.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

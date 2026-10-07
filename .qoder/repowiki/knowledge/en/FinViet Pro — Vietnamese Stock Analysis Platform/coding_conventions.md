@@ -1,0 +1,3 @@
+- External HTTP calls go through the shared Vietcap client rather than ad-hoc requests inside handlers.
+- All user-visible text and page markers use Vietnamese, keeping UI strings localized throughout templates and smoke-test assertions.
+- Dev-only scripts under `tools/` are self-contained entry points using only the Python standard library, independent of the Flask app.

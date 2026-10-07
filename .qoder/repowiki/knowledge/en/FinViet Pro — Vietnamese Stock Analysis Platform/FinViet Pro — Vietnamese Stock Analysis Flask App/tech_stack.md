@@ -1,0 +1,1 @@
+Flask (Blueprints + Jinja2), Python stdlib sqlite3 (WAL journal mode), requests-based Vietcap API client, Chart.js for candlestick charts, vanilla ES6+ frontend JS.

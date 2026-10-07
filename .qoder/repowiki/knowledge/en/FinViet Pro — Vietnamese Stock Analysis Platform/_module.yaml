@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: ""
+title: FinViet Pro — Vietnamese Stock Analysis Platform
+scope:
+    - README.md
+    - requirements.txt
+    - run.bat
+    - tools/
+source_files: []
+depends_on: []
+related_to: []

@@ -1,0 +1,397 @@
+"""HTTP routes: pages + JSON API."""
+from __future__ import annotations
+
+from flask import Blueprint, Response, jsonify, render_template, request
+
+from . import analysis as analysis_engine
+from . import db, kelly, market, portfolio, screener, vietcap
+from .config import INDEX_SYMBOLS, UNIVERSE_GROUPS, EXCHANGES, ON_VERCEL
+
+bp = Blueprint("main", __name__)
+
+
+def api_error(message: str, status: int = 400):
+    return jsonify({"error": str(message)}), status
+
+
+def _int_arg(name: str, default: int) -> int:
+    try:
+        return int(request.args.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+# ------------------------------------------------------------------ pages
+
+@bp.get("/")
+def page_dashboard():
+    return render_template("dashboard.html", active="dashboard")
+
+
+@bp.get("/phan-tich")
+def page_analysis():
+    return render_template("analysis.html", active="analysis")
+
+
+@bp.get("/sang-loc")
+def page_screener():
+    return render_template("screener.html", active="screener")
+
+
+@bp.get("/danh-muc")
+def page_portfolio():
+    return render_template("portfolio.html", active="portfolio")
+
+
+@bp.get("/canh-bao")
+def page_alerts():
+    return render_template("alerts.html", active="alerts")
+
+
+@bp.get("/cai-dat")
+def page_settings():
+    return render_template("settings.html", active="settings")
+
+
+# --------------------------------------------------------------------- api
+
+@bp.get("/api/health")
+def api_health():
+    return jsonify(
+        {
+            "status": "ok",
+            "app": "FinViet Pro",
+            "time": db.now_str(),
+            "serverless": ON_VERCEL,
+            "storage": "ephemeral" if ON_VERCEL else "local-sqlite",
+        }
+    )
+
+
+@bp.get("/api/symbols")
+def api_symbols():
+    term = request.args.get("query", "")
+    limit = min(_int_arg("limit", 20), 100)
+    try:
+        return jsonify({"symbols": market.symbol_search(term, limit=limit)})
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Không tải được danh sách mã: {exc}", 502)
+
+
+@bp.post("/api/symbols/refresh")
+def api_symbols_refresh():
+    try:
+        count = market.refresh_symbol_list(force=True)
+        return jsonify({"ok": True, "updated": count or "danh sách đã mới"})
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Làm mới danh sách thất bại: {exc}", 502)
+
+
+@bp.get("/api/index/summary")
+def api_index_summary():
+    try:
+        return jsonify({"indices": market.index_summary()})
+    except Exception as exc:  # noqa: BLE001
+        return api_error(str(exc), 502)
+
+
+@bp.get("/api/analyze")
+def api_analyze():
+    symbol = (request.args.get("symbol") or "").strip().upper()
+    if not symbol:
+        return api_error("Thiếu tham số symbol")
+    force = request.args.get("refresh") in {"1", "true", "yes"}
+    settings = db.get_settings()
+    days = _int_arg("days", int(settings.get("history_days") or 400))
+    try:
+        candles, source = market.get_candles(symbol, days=days, force=force,
+                                             cache_hours=float(settings.get("cache_hours") or 6))
+        fundamentals = None
+        try:
+            fundamentals = market.get_fundamentals(symbol)
+            if fundamentals:
+                fundamentals = dict(fundamentals)
+                fundamentals["dividend_events"] = market.dividend_events(symbol, limit=8)
+        except Exception:  # noqa: BLE001 - fundamentals are best-effort
+            fundamentals = None
+        meta = market.lookup_symbol(symbol)
+        payload = analysis_engine.analyze_symbol(symbol, candles, settings=settings,
+                                                 fundamentals=fundamentals, meta={
+                                                     "exchange": meta.get("exchange"),
+                                                     "organ_name": meta.get("organ_name"),
+                                                     "organ_short_name": meta.get("organ_short_name"),
+                                                 })
+        payload["data_source"] = source
+        try:
+            db.save_analysis(payload)
+        except Exception:  # noqa: BLE001 - persistence is best-effort
+            pass
+        return jsonify(payload)
+    except (ValueError, vietcap.VietcapError) as exc:
+        return api_error(str(exc), 400 if isinstance(exc, ValueError) else 502)
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Lỗi phân tích: {exc}", 500)
+
+
+@bp.get("/api/analysis/recent")
+def api_recent_analyses():
+    return jsonify({"items": db.recent_analyses(limit=min(_int_arg("limit", 12), 50))})
+
+
+@bp.get("/api/dividends/<symbol>")
+def api_dividends(symbol: str):
+    symbol = symbol.strip().upper()
+    try:
+        events = market.dividend_events(symbol, limit=10)
+        funds = market.get_fundamentals(symbol)
+        return jsonify(
+            {
+                "symbol": symbol,
+                "events": events,
+                "dividend_ttm": (funds or {}).get("div_ps_ttm"),
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        return api_error(str(exc), 502)
+
+
+@bp.post("/api/kelly/calc")
+def api_kelly_calc():
+    body = request.get_json(silent=True) or {}
+    settings = db.get_settings()
+
+    def num(key, default=None):
+        try:
+            value = body.get(key)
+            return float(value) if value not in (None, "") else default
+        except (TypeError, ValueError):
+            return default
+
+    win_prob_pct = num("win_prob", 50.0)
+    payoff = num("payoff", 2.0)
+    entry = num("entry")
+    stop = num("stop")
+    equity = num("equity", float(settings.get("equity") or 0))
+    mode = str(body.get("mode") or settings.get("kelly_mode") or "half")
+    if not entry or entry <= 0:
+        return api_error("Thiếu giá vào lệnh (entry)")
+    if not stop or stop <= 0:
+        stop = entry * 0.95
+    if stop >= entry:
+        return api_error("Giá cắt lỗ phải thấp hơn giá vào lệnh")
+    try:
+        result = kelly.recommendation(
+            win_prob_pct / 100.0,
+            payoff or 1.0,
+            entry,
+            stop,
+            equity,
+            mode=mode,
+            risk_pct=float(settings.get("risk_pct") or 2),
+            max_position_pct=float(settings.get("max_position_pct") or 20),
+            lot=int(settings.get("lot") or 100),
+        )
+        return jsonify(result)
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Lỗi tính toán Kelly: {exc}", 500)
+
+
+# -------------------------------------------------------------- screener
+
+@bp.get("/api/screener/universes")
+def api_screener_universes():
+    return jsonify({"groups": UNIVERSE_GROUPS, "exchanges": EXCHANGES})
+
+
+@bp.post("/api/screener/run")
+def api_screener_run():
+    body = request.get_json(silent=True) or {}
+    try:
+        result = screener.start_run(body)
+        return jsonify(result)
+    except ValueError as exc:
+        return api_error(str(exc), 409)
+    except vietcap.VietcapError as exc:
+        return api_error(f"Lỗi dữ liệu Vietcap: {exc}", 502)
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Không khởi động được phiên sàng lọc: {exc}", 500)
+
+
+@bp.get("/api/screener/runs")
+def api_screener_runs():
+    return jsonify({"runs": screener.recent_runs(limit=min(_int_arg("limit", 12), 40))})
+
+
+@bp.get("/api/screener/runs/<int:run_id>")
+def api_screener_run_status(run_id: int):
+    try:
+        return jsonify(screener.run_status(run_id))
+    except ValueError as exc:
+        return api_error(str(exc), 404)
+
+
+@bp.get("/api/screener/runs/<int:run_id>/results")
+def api_screener_run_results(run_id: int):
+    try:
+        screener.run_status(run_id)  # 404 guard
+    except ValueError as exc:
+        return api_error(str(exc), 404)
+    return jsonify({"results": screener.run_results(run_id)})
+
+
+@bp.get("/api/screener/runs/<int:run_id>/export")
+def api_screener_export(run_id: int):
+    try:
+        screener.run_status(run_id)
+    except ValueError as exc:
+        return api_error(str(exc), 404)
+    csv_text = screener.export_csv(run_id)
+    return Response(
+        csv_text,
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=sang_loc_{run_id}.csv"},
+    )
+
+
+# -------------------------------------------------------------- portfolio
+
+@bp.get("/api/portfolio/overview")
+def api_portfolio_overview():
+    try:
+        positions = portfolio.positions_overview()
+        return jsonify(
+            {
+                "positions": positions,
+                "summary": portfolio.portfolio_summary(positions),
+                "watchlist": portfolio.watchlist_rows(),
+                "alerts_count": portfolio.alerts_count(),
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Lỗi tải danh mục: {exc}", 500)
+
+
+@bp.post("/api/portfolio/positions")
+def api_position_create():
+    body = request.get_json(silent=True) or {}
+    try:
+        position_id = portfolio.create_position(body)
+        return jsonify({"ok": True, "id": position_id})
+    except ValueError as exc:
+        return api_error(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Không thêm được vị thế: {exc}", 500)
+
+
+@bp.put("/api/portfolio/positions/<int:position_id>")
+def api_position_update(position_id: int):
+    body = request.get_json(silent=True) or {}
+    try:
+        portfolio.update_position(position_id, body)
+        return jsonify({"ok": True})
+    except ValueError as exc:
+        return api_error(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Không cập nhật được vị thế: {exc}", 500)
+
+
+@bp.delete("/api/portfolio/positions/<int:position_id>")
+def api_position_delete(position_id: int):
+    try:
+        portfolio.delete_position(position_id)
+        return jsonify({"ok": True})
+    except Exception as exc:  # noqa: BLE001
+        return api_error(str(exc), 500)
+
+
+@bp.post("/api/portfolio/watch")
+def api_watch_add():
+    body = request.get_json(silent=True) or {}
+    try:
+        portfolio.add_watch(body)
+        return jsonify({"ok": True})
+    except ValueError as exc:
+        return api_error(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Không thêm được mã theo dõi: {exc}", 500)
+
+
+@bp.delete("/api/portfolio/watch/<int:watch_id>")
+def api_watch_remove(watch_id: int):
+    try:
+        portfolio.remove_watch(watch_id)
+        return jsonify({"ok": True})
+    except Exception as exc:  # noqa: BLE001
+        return api_error(str(exc), 500)
+
+
+@bp.post("/api/portfolio/scan")
+def api_portfolio_scan():
+    body = request.get_json(silent=True) or {}
+    force = bool(body.get("force"))
+    try:
+        result = portfolio.scan_alerts(force=force)
+        result["alerts_count"] = portfolio.alerts_count()
+        return jsonify(result)
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Lỗi quét cảnh báo: {exc}", 500)
+
+
+# ----------------------------------------------------------------- alerts
+
+@bp.get("/api/alerts")
+def api_alerts():
+    include_ack = request.args.get("include_ack") in {"1", "true", "yes"}
+    limit = min(_int_arg("limit", 100), 500)
+    return jsonify(
+        {
+            "alerts": portfolio.alerts_list(limit=limit, include_ack=include_ack),
+            "unread": portfolio.alerts_count(),
+        }
+    )
+
+
+@bp.post("/api/alerts/<int:alert_id>/ack")
+def api_alert_ack(alert_id: int):
+    portfolio.ack_alert(alert_id)
+    return jsonify({"ok": True, "unread": portfolio.alerts_count()})
+
+
+@bp.post("/api/alerts/ack-all")
+def api_alert_ack_all():
+    portfolio.ack_all()
+    return jsonify({"ok": True, "unread": 0})
+
+
+# --------------------------------------------------------------- settings
+
+ALLOWED_SETTINGS = {
+    "equity", "risk_pct", "max_position_pct", "kelly_mode", "history_days",
+    "cache_hours", "scan_minutes", "min_avg_volume", "lot", "screener_max_symbols",
+}
+
+
+@bp.get("/api/settings")
+def api_settings_get():
+    return jsonify(db.get_settings())
+
+
+@bp.post("/api/settings")
+def api_settings_post():
+    body = request.get_json(silent=True) or {}
+    updated = {}
+    for key, value in body.items():
+        if key not in ALLOWED_SETTINGS:
+            continue
+        if key in {"kelly_mode"}:
+            value = "full" if str(value) == "full" else "half"
+        else:
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                continue
+            if value < 0:
+                continue
+        db.set_setting(key, value)
+        updated[key] = value
+    return jsonify({"ok": True, "updated": updated, "settings": db.get_settings()})

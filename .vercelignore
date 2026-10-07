@@ -1,0 +1,7 @@
+# Files excluded from the Vercel upload/bundle
+data/
+tools/
+.vercel-tmp/
+**/__pycache__/
+*.pyc
+*.log

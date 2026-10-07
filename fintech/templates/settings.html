@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Cài đặt{% endblock %}
+{% block header_title %}Cài đặt{% endblock %}
+
+{% block content %}
+<div class="grid grid-2">
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h2>Quản trị vốn — Kelly 1/2 (Edward Thorp)</h2>
+        <p class="sub">Áp dụng cho gợi ý khối lượng ở trang Phân tích và khi thêm vị thế.</p>
+      </div>
+    </div>
+    <div class="grid grid-2">
+      <label class="field">Tổng vốn đầu tư (đ)
+        <input class="input" type="number" id="s-equity" min="0" step="10000000">
+      </label>
+      <label class="field">Chế độ Kelly
+        <select class="input" id="s-kelly-mode">
+          <option value="half">1/2 Kelly (khuyến nghị — Thorp)</option>
+          <option value="full">Kelly đầy đủ (rủi ro cao)</option>
+        </select>
+      </label>
+      <label class="field">Rủi ro mỗi lệnh (% vốn)
+        <input class="input" type="number" id="s-risk" min="0.1" max="10" step="0.1">
+      </label>
+      <label class="field">Tỷ trọng tối đa 1 mã (% vốn)
+        <input class="input" type="number" id="s-maxpos" min="1" max="100" step="1">
+      </label>
+      <label class="field">Lô giao dịch tối thiểu (CP)
+        <input class="input" type="number" id="s-lot" min="1" step="10">
+      </label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h2>Dữ liệu &amp; hiệu năng</h2>
+        <p class="sub">Bộ đệm SQLite giúp giảm số lần gọi Vietcap API.</p>
+      </div>
+    </div>
+    <div class="grid grid-2">
+      <label class="field">Số phiên lịch sử tải về
+        <input class="input" type="number" id="s-history-days" min="120" max="1500" step="20">
+      </label>
+      <label class="field">Hạn dùng bộ đệm nến (giờ)
+        <input class="input" type="number" id="s-cache-hours" min="1" max="72" step="1">
+      </label>
+      <label class="field">Tần suất quét cảnh báo (phút)
+        <input class="input" type="number" id="s-scan-minutes" min="5" max="1440" step="5">
+      </label>
+      <label class="field">Số mã tối đa mỗi phiên sàng lọc
+        <input class="input" type="number" id="s-max-symbols" min="5" max="1200" step="50">
+      </label>
+      <label class="field span-2">Thanh khoản tối thiểu (CP/phiên)
+        <input class="input" type="number" id="s-min-volume" min="0" step="10000">
+      </label>
+    </div>
+    <div class="flex mt-16 flex-wrap">
+      <button class="btn btn-ghost btn-sm" id="s-refresh-symbols">Làm mới danh sách mã từ Vietcap</button>
+      <span class="hint" id="s-symbols-note">Danh sách mã được tự động đồng bộ mỗi 72 giờ.</span>
+    </div>
+  </section>
+</div>
+
+<section class="card mt-16">
+  <div class="flex-between flex-wrap">
+    <div class="flex">
+      <button class="btn btn-primary" id="s-save">Lưu cài đặt</button>
+      <button class="btn btn-ghost" id="s-reload">Khôi phục giá trị đang lưu</button>
+    </div>
+    <span class="hint">Cài đặt lưu trong SQLite (bảng settings) — áp dụng ngay cho các phân tích tiếp theo.</span>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <div><h3>Về FinViet Pro</h3><p class="sub">Nguồn dữ liệu &amp; phương pháp</p></div>
+  </div>
+  <div class="kv-list">
+    <div class="kv-row"><span class="k">Nguồn dữ liệu</span><span class="v">Vietcap Trading API (giá EOD, chỉ số, cổ tức)</span></div>
+    <div class="kv-row"><span class="k">Phương pháp điểm mua/bán</span><span class="v">Fibonacci thoái lui &amp; mở rộng, Pivot Point, Hỗ trợ/Kháng cự, RSI/MACD/MA</span></div>
+    <div class="kv-row"><span class="k">Quản trị vốn</span><span class="v">Kelly Criterion 1/2 — Edward Thorp (điểm thắng × tỷ lệ payoff)</span></div>
+    <div class="kv-row"><span class="k">Lưu trữ</span><span class="v">SQLite (data/fintech.db) — nến, chỉ số, phân tích, sàng lọc, vị thế, cảnh báo</span></div>
+    <div class="kv-row"><span class="k">Lưu ý</span><span class="v">Công cụ tham khảo, không phải khuyến nghị đầu tư</span></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/settings.js') }}"></script>
+{% endblock %}

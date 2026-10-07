@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Sàng lọc cổ phiếu{% endblock %}
+{% block header_title %}Sàng lọc cổ phiếu{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>Tiêu chí sàng lọc</h2>
+      <p class="sub">Quét theo tín hiệu Fibonacci/Pivot, thanh khoản và tỷ suất cổ tức — dữ liệu Vietcap, kết quả lưu vào SQLite.</p>
+    </div>
+    <button class="btn btn-primary" id="run-btn">Bắt đầu sàng lọc</button>
+  </div>
+
+  <div class="tabs" id="universe-tabs">
+    <button class="tab active" data-type="group">Theo nhóm chỉ số</button>
+    <button class="tab" data-type="exchange">Theo sàn</button>
+    <button class="tab" data-type="custom">Danh sách tự chọn</button>
+  </div>
+
+  <div class="criteria-grid mt-16">
+    <label class="field" id="group-wrap">
+      Nhóm chỉ số
+      <select class="input" id="universe-group"></select>
+    </label>
+    <label class="field hidden" id="exchange-wrap">
+      Sàn giao dịch
+      <select class="input" id="universe-exchange"></select>
+    </label>
+    <label class="field span-2 hidden" id="custom-wrap">
+      Danh sách mã (phân cách bằng dấu phẩy)
+      <input class="input" id="universe-custom" placeholder="FPT, VCB, HPG, SSI...">
+    </label>
+
+    <div class="field span-2">
+      Tín hiệu chấp nhận
+      <div class="flex flex-wrap mt-8" id="crit-signals">
+        <label class="check-row"><input type="checkbox" value="STRONG_BUY" checked> MUA MẠNH</label>
+        <label class="check-row"><input type="checkbox" value="BUY" checked> MUA</label>
+        <label class="check-row"><input type="checkbox" value="HOLD"> NẮM GIỮ</label>
+        <label class="check-row"><input type="checkbox" value="SELL"> BÁN</label>
+        <label class="check-row"><input type="checkbox" value="STRONG_SELL"> BÁN MẠNH</label>
+      </div>
+    </div>
+
+    <label class="field">
+      Điểm tín hiệu tối thiểu
+      <input class="input" type="number" id="crit-min-score" value="0" step="1" min="-100" max="100">
+    </label>
+    <label class="field">
+      Cổ tức tối thiểu (%/năm theo giá)
+      <input class="input" type="number" id="crit-div-yield" value="0" step="0.5" min="0" placeholder="VD: 5 = 5%">
+      <span class="hint">Ví dụ: nhập 6 nghĩa là lọc cổ phiếu có cổ tức &ge; 6% thị giá.</span>
+    </label>
+    <label class="field">
+      KL khớp TB tối thiểu (CP/phiên)
+      <input class="input" type="number" id="crit-min-volume" value="100000" step="10000" min="0">
+    </label>
+    <label class="field">
+      Số mã tối đa mỗi phiên quét
+      <input class="input" type="number" id="crit-max-symbols" value="250" step="50" min="5" max="1200">
+    </label>
+    <label class="field">
+      Giá tối thiểu (đ)
+      <input class="input" type="number" id="crit-price-min" placeholder="Không giới hạn" step="1000" min="0">
+    </label>
+    <label class="field">
+      Giá tối đa (đ)
+      <input class="input" type="number" id="crit-price-max" placeholder="Không giới hạn" step="1000" min="0">
+    </label>
+    <label class="field span-2" style="justify-content:flex-end;">
+      Bộ lọc cổ tức
+      <label class="check-row"><input type="checkbox" id="crit-exclude-unknown" checked> Loại các mã chưa có dữ liệu cổ tức</label>
+    </label>
+  </div>
+</section>
+
+<section class="card hidden" id="run-progress">
+  <div class="flex-between flex-wrap">
+    <div class="flex">
+      <span class="spinner"></span>
+      <div>
+        <strong id="run-status-label">Đang sàng lọc...</strong>
+        <p class="sub" id="run-stats">—</p>
+      </div>
+    </div>
+    <span class="badge tone-info" id="run-matched">0 mã đạt tiêu chí</span>
+  </div>
+  <div class="progress mt-16"><span id="run-bar" style="width:0%"></span></div>
+</section>
+
+<div class="dash-grid mt-16">
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h3>Kết quả sàng lọc</h3>
+        <p class="sub" id="results-sub">Chưa có kết quả — hãy chạy sàng lọc hoặc chọn một phiên bên phải.</p>
+      </div>
+      <a class="btn btn-sm btn-ghost hidden" id="export-btn" href="#">Xuất CSV</a>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table" id="results-table">
+        <thead>
+          <tr>
+            <th>Mã</th><th>Tín hiệu</th><th class="num">Điểm</th><th class="num">Giá</th>
+            <th class="num">%Ngày</th><th class="num">RSI</th><th class="num">KL TB20</th>
+            <th class="num">Cổ tức</th><th class="num">Vùng mua</th><th class="num">Cắt lỗ</th>
+            <th class="num">Mục tiêu</th><th class="num">R:R</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="no-hover"><td colspan="12"><div class="empty-state"><strong>Chưa có kết quả</strong>Chọn tiêu chí và bấm "Bắt đầu sàng lọc".</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div><h3>Phiên sàng lọc gần đây</h3><p class="sub">Lịch sử lưu trong SQLite</p></div>
+      <button class="btn btn-sm btn-ghost" id="refresh-runs-btn">Làm mới</button>
+    </div>
+    <div class="alert-feed" id="recent-runs">
+      <div class="loading-row"><span class="spinner"></span> Đang tải...</div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/screener.js') }}"></script>
+{% endblock %}

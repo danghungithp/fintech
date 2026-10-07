@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: fintech_app
+title: FinViet Pro — Vietnamese Stock Analysis Flask App
+scope:
+    - fintech/
+    - app.py
+source_files: []
+depends_on: []
+related_to: []

@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Danh mục đầu tư{% endblock %}
+{% block header_title %}Danh mục đầu tư{% endblock %}
+
+{% block content %}
+<div class="grid-stats">
+  <div class="stat-card accent">
+    <span class="label">Giá trị thị trường</span>
+    <div class="value tnum" id="pf-value">—</div>
+    <div class="delta tnum" id="pf-pnl">—</div>
+  </div>
+  <div class="stat-card">
+    <span class="label">Vốn đầu tư · Tiền mặt</span>
+    <div class="value tnum" id="pf-cost">—</div>
+    <div class="delta muted" id="pf-cash">—</div>
+  </div>
+  <div class="stat-card">
+    <span class="label">Tỷ trọng giải ngân</span>
+    <div class="value tnum" id="pf-alloc">—</div>
+    <div class="progress mt-8" style="margin-top:8px;"><span id="pf-alloc-bar" style="width:0%"></span></div>
+  </div>
+  <div class="stat-card">
+    <span class="label">Cảnh báo chưa xử lý</span>
+    <div class="value tnum" id="pf-alerts">—</div>
+    <div class="delta muted">Cắt lỗ · tín hiệu · mục tiêu</div>
+  </div>
+</div>
+
+<div class="dash-grid mt-16">
+  <div>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Quản lý vị thế</h2>
+          <p class="sub">Cảnh báo tự động khi có tín hiệu mua/bán, chạm cắt lỗ hoặc đạt mục tiêu.</p>
+        </div>
+        <div class="flex">
+          <button class="btn btn-sm btn-ghost" id="pf-scan-btn">Quét cảnh báo ngay</button>
+          <button class="btn btn-sm btn-primary" id="add-pos-btn">+ Thêm vị thế</button>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" id="tab-btn-positions" data-panel="panel-positions">Vị thế đang mở</button>
+        <button class="tab" id="tab-btn-watch" data-panel="panel-watch">Danh sách theo dõi</button>
+      </div>
+
+      <div class="mt-16" id="panel-positions">
+        <div class="table-wrap">
+          <table class="data-table" id="positions-full-table">
+            <thead>
+              <tr>
+                <th>Mã</th><th class="num">KL</th><th class="num">Giá vốn</th><th class="num">Giá</th>
+                <th class="num">Giá trị</th><th class="num">Lãi/Lỗ</th><th class="num">%</th>
+                <th>Tín hiệu</th><th class="num">Cắt lỗ</th><th class="num">Cách giá</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="no-hover"><td colspan="11"><div class="loading-row"><span class="spinner"></span> Đang tải...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="mt-16 hidden" id="panel-watch">
+        <div class="table-wrap">
+          <table class="data-table" id="watch-table">
+            <thead>
+              <tr>
+                <th>Mã</th><th class="num">Giá</th><th class="num">%Ngày</th><th>Tín hiệu</th>
+                <th class="num">Vùng mua</th><th class="num">Mục tiêu</th><th>Ghi chú</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="no-hover"><td colspan="8"><div class="loading-row"><span class="spinner"></span> Đang tải...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="flex mt-12">
+          <button class="btn btn-sm btn-ghost" id="add-watch-btn">+ Thêm mã theo dõi</button>
+          <span class="hint">Mã theo dõi sẽ được cảnh báo khi xuất hiện tín hiệu mua theo Fibonacci/Pivot.</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div>
+    <section class="card">
+      <div class="card-head">
+        <div><h3>Phân bổ danh mục</h3><p class="sub">Theo giá trị thị trường · so với vốn cài đặt</p></div>
+      </div>
+      <div class="alloc-bar" id="alloc-bar"></div>
+      <div class="alloc-legend" id="alloc-legend">
+        <span class="muted small">Chưa có vị thế.</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div><h3>Cảnh báo gần đây</h3><p class="sub">Từ danh mục &amp; danh sách theo dõi</p></div>
+        <button class="btn btn-sm btn-ghost" id="pf-ack-all">Đã xem hết</button>
+      </div>
+      <div class="alert-feed" id="pf-alerts-feed">
+        <div class="loading-row"><span class="spinner"></span> Đang tải...</div>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/portfolio.js') }}"></script>
+{% endblock %}

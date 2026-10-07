@@ -1,0 +1,30 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: en-US
+branch: Q0DeR-MaG1C-BrAnCh-Fo2-NoN-GiT-Or-No-C0MmIt
+nodes_managed: true
+exported_at: "2026-10-07T05:28:56Z"
+modules:
+    "":
+        dir_name: FinViet Pro — Vietnamese Stock Analysis Platform
+        title: FinViet Pro — Vietnamese Stock Analysis Platform
+        scope:
+            - README.md
+            - requirements.txt
+            - run.bat
+            - tools/
+        source_files: []
+        children:
+            - fintech_app
+        depends_on: []
+        related_to: []
+    fintech_app:
+        dir_name: FinViet Pro — Vietnamese Stock Analysis Flask App
+        title: FinViet Pro — Vietnamese Stock Analysis Flask App
+        scope:
+            - fintech/
+            - app.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []

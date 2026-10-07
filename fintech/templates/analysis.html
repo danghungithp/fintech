@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Phân tích kỹ thuật{% endblock %}
+{% block header_title %}Phân tích kỹ thuật{% endblock %}
+
+{% block content %}
+<section class="card" style="margin-bottom:16px;">
+  <div class="flex-between flex-wrap">
+    <div>
+      <h2>Điểm mua / bán theo Fibonacci · Pivot · Hỗ trợ / Kháng cự</h2>
+      <p class="sub">Nhập mã cổ phiếu để phân tích cấu trúc giá, tìm vùng mua an toàn, cắt lỗ và mục tiêu chốt lời.</p>
+    </div>
+    <form class="symbol-form" id="analyze-form" autocomplete="off">
+      <input class="input" id="symbol-input" list="analyze-symbol-suggest" data-symbol-input
+             placeholder="Mã CK — VD: FPT, VCB, HPG" style="width:240px;">
+      <datalist id="analyze-symbol-suggest"></datalist>
+      <button class="btn btn-primary" type="submit" id="analyze-btn">
+        <span id="analyze-btn-label">Phân tích</span>
+      </button>
+      <button class="btn btn-ghost" type="button" id="refresh-btn" title="Tải lại dữ liệu mới nhất">↻</button>
+    </form>
+  </div>
+</section>
+
+<div id="analysis-empty" class="card empty-state">
+  <strong>Chưa có dữ liệu phân tích</strong>
+  Nhập mã cổ phiếu ở trên (ví dụ FPT) rồi bấm <b>Phân tích</b>. Hệ thống sẽ tải dữ liệu từ Vietcap,
+  vẽ biểu đồ nến kèm Fibonacci / Pivot / Hỗ trợ / Kháng cự và gợi ý điểm mua — điểm bán tối ưu.
+</div>
+
+<div id="analysis-loading" class="card hidden">
+  <div class="loading-row"><span class="spinner"></span> Đang tải dữ liệu từ Vietcap và phân tích...</div>
+</div>
+
+<div id="analysis-error" class="card hidden empty-state"></div>
+
+<div id="analysis-view" class="analysis-grid hidden">
+  <section class="card chart-card">
+    <header class="card-head">
+      <div class="sym-head">
+        <h2 id="sym-name">—</h2>
+        <span id="sym-meta" class="sub"></span>
+      </div>
+      <div class="price-head">
+        <span class="price tnum" id="sym-price">—</span>
+        <span class="chg tnum" id="sym-change">—</span>
+        <span id="sym-signal"></span>
+      </div>
+    </header>
+    <div id="price-chart" class="chart"></div>
+    <div id="rsi-chart" class="chart"></div>
+    <div class="chart-legend">
+      <span class="legend-item"><span class="legend-swatch" style="background:#38bdf8"></span>SMA20</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:#f59e0b"></span>SMA50</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:#a78bfa"></span>SMA200</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:#f0b90b"></span>Fibonacci</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:#2dd4bf"></span>Hỗ trợ (HT)</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:#f472b6"></span>Kháng cự (KC)</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:#16c784"></span>▲ điểm MUA</span>
+      <span class="legend-item"><span class="legend-swatch" style="background:#ef4b5e"></span>▼ điểm BÁN</span>
+      <span class="legend-item" id="sym-source"></span>
+    </div>
+  </section>
+
+  <aside class="side-col">
+    <div class="card">
+      <div class="card-head" style="margin-bottom:8px;">
+        <h3>Tín hiệu tổng hợp</h3>
+        <span class="chip" id="sym-score-chip">Điểm: —</span>
+      </div>
+      <div class="gauge-wrap">
+        <span class="gauge-label" id="signal-label">—</span>
+        <div class="grow" id="signal-bar"></div>
+      </div>
+      <div class="kv-list mt-12" id="signal-kv"></div>
+      <ul class="reason-list" id="signal-reasons"></ul>
+    </div>
+
+    <div class="card">
+      <div class="card-head" style="margin-bottom:8px;">
+        <h3>Điểm mua — Điểm bán kế hoạch</h3>
+        <div class="flex">
+          <button class="btn btn-xs btn-ghost" id="watch-btn" title="Thêm vào danh mục theo dõi">+ Theo dõi</button>
+        </div>
+      </div>
+      <div class="level-list" id="levels-buy"></div>
+      <div class="level-list mt-8" id="levels-stop"></div>
+      <div class="level-list mt-8" id="levels-sell"></div>
+      <div id="levels-warnings"></div>
+      <div class="kv-row mt-12"><span class="k">Tỷ lệ lợi nhuận / rủi ro (R:R)</span><span class="v" id="levels-rr">—</span></div>
+    </div>
+
+    <div class="card" id="kelly-card">
+      <div class="card-head" style="margin-bottom:8px;">
+        <h3>Quản trị vốn — Kelly 1/2</h3>
+        <span class="chip">Edward Thorp</span>
+      </div>
+      <p class="sub mb-8">Tỷ lệ phân bổ tối ưu theo Kelly, mặc định dùng <b>1/2 Kelly</b> để giảm drawdown.</p>
+      <div class="kelly-grid">
+        <label class="field">Vốn đầu tư (đồng)<input id="k-equity" type="number" step="1000000"></label>
+        <label class="field">Giá vào (đồng)<input id="k-entry" type="number" step="10"></label>
+        <label class="field">Cắt lỗ (đồng)<input id="k-stop" type="number" step="10"></label>
+        <label class="field">Xác suất thắng (%)<input id="k-win" type="number" step="1" min="1" max="99"></label>
+        <label class="field">Payoff (lần lãi/lỗ)<input id="k-payoff" type="number" step="0.1" min="0.1"></label>
+        <label class="field">Chế độ Kelly
+          <select id="k-mode">
+            <option value="half">1/2 Kelly (khuyến nghị)</option>
+            <option value="full">Kelly đầy đủ</option>
+          </select>
+        </label>
+      </div>
+      <button class="btn btn-primary" id="k-calc" style="width:100%;">Tính phân bổ vốn</button>
+      <div id="k-result" class="hidden"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head" style="margin-bottom:8px;"><h3>Fibonacci</h3><span class="chip" id="fib-direction">—</span></div>
+      <div class="kv-list" id="fib-kv"></div>
+      <table class="mini-table mt-12" id="fib-table"></table>
+      <p class="hint mt-8" id="fib-note"></p>
+    </div>
+
+    <div class="card">
+      <div class="card-head" style="margin-bottom:8px;"><h3>Pivot Points</h3><span class="chip">Cổ điển</span></div>
+      <table class="mini-table" id="pivot-table"></table>
+    </div>
+
+    <div class="card">
+      <div class="card-head" style="margin-bottom:8px;"><h3>Hỗ trợ &amp; Kháng cự</h3></div>
+      <div class="grid grid-2">
+        <div><p class="small muted mb-8"><b>Hỗ trợ (HT)</b></p><div id="sr-supports"></div></div>
+        <div><p class="small muted mb-8"><b>Kháng cự (KC)</b></p><div id="sr-resistances"></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head" style="margin-bottom:8px;"><h3>Chỉ báo kỹ thuật</h3></div>
+      <div class="kv-list" id="indicators-kv"></div>
+    </div>
+
+    <div class="card" id="backtest-card">
+      <div class="card-head" style="margin-bottom:8px;"><h3>Kiểm định tín hiệu (Backtest)</h3><span class="chip" id="backtest-source">—</span></div>
+      <div class="kv-list" id="backtest-kv"></div>
+      <p class="hint mt-8">Mô phỏng theo tín hiệu điểm mua/bán trên chính dữ liệu lịch sử của mã này (stop 1.5×ATR, mục tiêu 2R). Kết quả dùng làm đầu vào cho Kelly.</p>
+    </div>
+
+    <div class="card" id="dividend-card">
+      <div class="card-head" style="margin-bottom:8px;"><h3>Cổ tức &amp; Cơ bản</h3></div>
+      <div class="kv-list" id="dividend-kv"></div>
+      <table class="mini-table mt-12 hidden" id="dividend-table"></table>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/chart.js') }}"></script>
+<script src="{{ url_for('static', filename='js/analysis.js') }}"></script>
+{% endblock %}

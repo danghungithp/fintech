@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Cảnh báo{% endblock %}
+{% block header_title %}Cảnh báo danh mục{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>Trung tâm cảnh báo</h2>
+      <p class="sub">Cắt lỗ chạm ngưỡng, tín hiệu mua/bán theo Fibonacci–Pivot, chốt lời và thủng hỗ trợ — quét trên cả danh mục và danh sách theo dõi.</p>
+    </div>
+    <div class="flex">
+      <button class="btn btn-sm btn-ghost" id="al-scan-btn">Quét ngay</button>
+      <button class="btn btn-sm btn-primary" id="al-ack-all">Đã xem hết</button>
+    </div>
+  </div>
+
+  <div class="flex-between flex-wrap">
+    <div class="tabs">
+      <button class="tab active" data-filter="unread">Chưa xử lý (<span id="al-unread-count">0</span>)</button>
+      <button class="tab" data-filter="all">Tất cả</button>
+    </div>
+    <div class="results-meta">
+      <select class="input" id="al-severity" style="width:190px;">
+        <option value="">Mọi mức độ</option>
+        <option value="critical">Nghiêm trọng (cắt lỗ)</option>
+        <option value="high">Cao (tín hiệu bán)</option>
+        <option value="warning">Cảnh báo</option>
+        <option value="medium">Trung bình</option>
+        <option value="info">Thông tin</option>
+      </select>
+      <label class="check-row"><input type="checkbox" id="al-symbol-filter-toggle"> Lọc theo mã</label>
+      <input class="input hidden" id="al-symbol-filter" placeholder="VD: FPT" style="width:140px;">
+    </div>
+  </div>
+
+  <div class="alert-feed mt-16" id="al-feed">
+    <div class="loading-row"><span class="spinner"></span> Đang tải...</div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/alerts.js') }}"></script>
+{% endblock %}

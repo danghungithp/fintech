@@ -1,0 +1,7 @@
+Single-package Flask app under `fintech/` with a clear separation of concerns:
+- Entry point `app.py` calls `fintech.create_app()` which instantiates the Flask app, initializes SQLite (`db.init_db`), registers the `main` Blueprint from `routes.py`, and attaches a JSON `Cache-Control: no-store` after-request hook.
+- `routes.py` defines all HTTP endpoints (page templates + `/api/*` JSON) on one Blueprint; it is a thin layer that delegates domain logic to sibling modules: `market` (candles/fundamentals/Vietcap client), `analysis` (signal scoring), `screener` (async run engine), `portfolio` (positions/watchlist/alerts), `kelly` (position sizing), and `vietcap` (API client).
+- `db.py` owns the SQLite schema (symbols, ohlcv, fundamentals, dividend_events, analyses, screen_runs/results, positions, watchlist, alerts, settings, cache_stamps) and exposes typed helpers (`query`, `execute`, `get_setting`, `save_candles`, etc.) via a `get_db()` context manager with WAL mode and transactional commit/rollback.
+- `config.py` centralizes constants (DB path, signal thresholds, DEFAULT_SETTINGS, UNIVERSE_GROUPS, EXCHANGES) and env-driven HOST/PORT/DEBUG.
+- Static assets live in `fintech/static/{css,js}` and Jinja2 templates in `fintech/templates/`; each template corresponds to a route in `routes.py` and receives an `active` page flag for nav highlighting.
+- Dependency direction is strictly routes → domain modules → db/config/vietcap; domain modules never import Flask.

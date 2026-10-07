@@ -1,0 +1,1 @@
+Flask web application providing real-time Vietnamese stock analysis, screener, portfolio tracking, alerts and Kelly sizing backed by SQLite and the Vietcap market data API.

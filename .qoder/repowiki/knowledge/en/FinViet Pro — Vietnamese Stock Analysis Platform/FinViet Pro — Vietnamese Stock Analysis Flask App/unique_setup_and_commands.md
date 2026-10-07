@@ -1,0 +1,1 @@
+Run directly with `python app.py`; host/port/debug are controlled by `FINTECH_HOST`, `FINTECH_PORT`, `FINTECH_DEBUG` environment variables. The app creates `data/fintech.db` automatically on first start.
