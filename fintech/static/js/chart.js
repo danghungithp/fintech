@@ -273,7 +273,9 @@
   function observeResize(container, chart) {
     if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(() => {
-      try { chart.applyOptions({ width: container.clientWidth }); } catch (e) { /* ignore */ }
+      // Track both dimensions: if the chart was created while its container was
+      // hidden (0x0), this restores the real size as soon as it becomes visible.
+      try { chart.applyOptions({ width: container.clientWidth, height: container.clientHeight }); } catch (e) { /* ignore */ }
     });
     ro.observe(container);
   }

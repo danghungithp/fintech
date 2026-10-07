@@ -26,8 +26,10 @@
     try {
       const payload = await fetchJSON(`/api/analyze?symbol=${encodeURIComponent(symbol)}${refresh ? '&refresh=1' : ''}`);
       current = payload;
-      renderAll(payload);
+      // Show the view BEFORE rendering: chart libraries measure the container at
+      // creation time, and a display:none parent yields a 0px-high canvas.
       showState('analysis-view');
+      renderAll(payload);
       const url = new URL(window.location.href);
       url.searchParams.set('symbol', symbol);
       window.history.replaceState(null, '', url.toString());
