@@ -59,7 +59,7 @@
     note.textContent = 'Đang tải danh sách mã từ Vietcap (có thể mất vài giây)...';
     try {
       const res = await postJSON('/api/symbols/refresh', {});
-      note.textContent = `Đồng bộ thành công — ${res.updated} mã trong SQLite.`;
+      note.textContent = `Đồng bộ thành công — ${res.updated} mã trong InfluxDB.`;
       toast('Đã làm mới danh sách mã niêm yết.', 'success', 'Vietcap');
     } catch (err) {
       note.textContent = '';

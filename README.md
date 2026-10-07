@@ -1,11 +1,11 @@
 # FinViet Pro — Ứng dụng phân tích đầu tư chứng khoán Việt Nam
 
-Ứng dụng web (Python Flask + SQLite) phân tích kỹ thuật cổ phiếu Việt Nam theo phương pháp
+Ứng dụng web (Python Flask + InfluxDB 3) phân tích kỹ thuật cổ phiếu Việt Nam theo phương pháp
 **Fibonacci · Pivot Point · Hỗ trợ/Kháng cự**, quản trị vốn theo **Kelly 1/2 của Edward Thorp**,
 kèm **quản lý danh mục — cảnh báo tự động** và **sàng lọc cổ phiếu theo tín hiệu mua & cổ tức**.
 Dữ liệu lấy từ **Vietcap Trading API** (giá EOD, chỉ số, cổ tức).
 
-![FinViet Pro](https://img.shields.io/badge/Python-Flask-38bdf8) ![DB](https://img.shields.io/badge/Storage-SQLite-16c784)
+![FinViet Pro](https://img.shields.io/badge/Python-Flask-38bdf8) ![DB](https://img.shields.io/badge/Storage-InfluxDB%203-16c784)
 
 ---
 
@@ -21,25 +21,32 @@ Dữ liệu lấy từ **Vietcap Trading API** (giá EOD, chỉ số, cổ tức
 | **Quản lý danh mục** | Vị thế (giá vốn, KL, cắt lỗ, chốt lời), lãi/lỗ realtime theo giá đóng cửa, phân bổ tỷ trọng, danh sách theo dõi |
 | **Cảnh báo tự động** | Cắt lỗ chạm ngưỡng, tín hiệu bán, chốt lời, chốt lãi chủ động (>8% từ đỉnh), thủng hỗ trợ, tín hiệu mua cho mã theo dõi, đạt giá mục tiêu — chống trùng lặp theo ngày |
 | **Sàng lọc cổ phiếu** | Quét nền theo nhóm chỉ số (VN30/VN100/HNX30/HOSE/HNX/UPCOM/ETF), sàn, hoặc danh sách tự chọn · lọc theo tín hiệu, điểm, thanh khoản, giá, **tỷ suất cổ tức ≥ ngưỡng** · thanh tiến độ realtime · xuất CSV |
-| **Lưu trữ SQLite** | Toàn bộ dữ liệu (nến, cơ bản, cổ tức, kết quả phân tích, phiên sàng lọc, vị thế, cảnh báo, cài đặt) lưu trong `data/fintech.db` — có bộ đệm giảm gọi API |
+| **Lưu trữ InfluxDB 3** | Toàn bộ dữ liệu (nến, cơ bản, cổ tức, kết quả phân tích, phiên sàng lọc, vị thế, cảnh báo, cài đặt) lưu trên **InfluxDB 3 Cloud Serverless** (bucket `fintech`) — bền vững kể cả trên Vercel, có bộ đệm giảm gọi API |
 
 ## 2. Cài đặt & chạy
 
-Yêu cầu: **Python 3.10+** (khuyến nghị 3.12+).
+Yêu cầu: **Python 3.10+** (khuyến nghị 3.12+) và một **bucket InfluxDB 3 Cloud Serverless** (miễn phí — đăng ký tại [cloud2.influxdata.com](https://cloud2.influxdata.com)).
 
 ```bash
-# 1. Cài thư viện (chỉ cần Flask — phần còn lại dùng thư viện chuẩn)
+# 1. Cài thư viện (Flask + influxdb3-python)
 pip install -r requirements.txt
 
-# 2. Chạy ứng dụng
+# 2. Cấu hình InfluxDB: sao chép .env.example thành .env rồi điền token
+copy .env.example .env        # Windows (Linux/macOS: cp .env.example .env)
+#    INFLUXDB_TOKEN=<token của bạn>   (Load Data → API Tokens trên InfluxDB Cloud)
+#    INFLUXDB_HOST / INFLUXDB_ORG / INFLUXDB_BUCKET  — đã có giá trị mặc định phù hợp
+
+# 3. Chạy ứng dụng
 python app.py
 ```
 
-Hoặc trên Windows: nháy đúp **`run.bat`** (tự cài Flask nếu thiếu và tự mở trình duyệt).
+Hoặc trên Windows: nháy đúp **`run.bat`** (tự cài thư viện nếu thiếu và tự mở trình duyệt).
 
 Mở trình duyệt: **http://127.0.0.1:5000**
 
 Biến môi trường tùy chọn: `FINTECH_HOST` (mặc định 127.0.0.1), `FINTECH_PORT` (mặc định 5000), `FINTECH_DEBUG=1`.
+
+> ⚠️ **Token là thông tin bí mật** — file `.env` đã được `.gitignore` và `.vercelignore` loại trừ, tuyệt đối không commit token lên Git.
 
 ## 3. Hướng dẫn sử dụng
 
@@ -74,7 +81,7 @@ Biến môi trường tùy chọn: `FINTECH_HOST` (mặc định 127.0.0.1), `FI
 - `iq.vietcap.com.vn/api/iq-insight-service/v1/company/details` — cơ bản, cổ tức 12 tháng (`dividendPerShareTsr`)
 - `iq.vietcap.com.vn/api/iq-insight-service/v1/events?...eventCode=DIV` — lịch sử cổ tức
 
-Dữ liệu được **đệm trong SQLite** (nến 6 giờ, cơ bản 24 giờ, danh sách mã 72 giờ — tùy chỉnh ở trang Cài đặt).
+Dữ liệu được **đệm trong InfluxDB** (nến 6 giờ, cơ bản 24 giờ, danh sách mã 72 giờ — tùy chỉnh ở trang Cài đặt).
 
 ## 6. Cấu trúc dự án
 
@@ -84,13 +91,15 @@ fintech/
 ├── vercel.json             # cấu hình deploy Vercel (framework + functions)
 ├── requirements.txt
 ├── run.bat
-├── data/fintech.db         # SQLite (tự tạo khi chạy local)
+├── .env.example            # mẫu cấu hình InfluxDB (sao chép thành .env — không commit .env)
 ├── tools/
 │   ├── api_probe.py        # công cụ kiểm tra API Vietcap
+│   ├── storage_test.py     # kiểm thử tầng lưu trữ InfluxDB (bucket cách ly fintech_test)
 │   └── smoke_test.py       # kiểm thử đầu-cuối (server đang chạy)
 └── fintech/
-    ├── config.py           # hằng số, ngưỡng tín hiệu, cài đặt mặc định (tự nhận diện Vercel)
-    ├── db.py               # schema + truy vấn SQLite
+    ├── config.py           # hằng số, ngưỡng tín hiệu, cài đặt mặc định (tự nạp .env, nhận diện Vercel)
+    ├── influx.py           # client InfluxDB 3 (kết nối, ghi Point, truy vấn SQL/Flight)
+    ├── db.py               # tầng lưu trữ: schema measurement + truy vấn (append-only, gộp bản mới nhất)
     ├── vietcap.py          # client Vietcap (retry, semaphore)
     ├── indicators.py       # SMA/EMA/RSI/MACD/ATR/Bollinger
     ├── analysis.py         # Fib, Pivot, S/R, điểm tín hiệu, backtest, mức hành động
@@ -106,8 +115,9 @@ fintech/
 ## 7. Kiểm thử
 
 ```bash
-python app.py                 # cửa sổ 1
-python tools/smoke_test.py    # cửa sổ 2 — kiểm thử 29 mục: trang, phân tích, Kelly, sàng lọc, danh mục, cảnh báo
+python app.py                     # cửa sổ 1
+python tools/smoke_test.py        # cửa sổ 2 — 28 mục: trang, phân tích, Kelly, sàng lọc, danh mục, cảnh báo
+python tools/storage_test.py      # 52 mục — tầng lưu trữ InfluxDB (dùng bucket cách ly fintech_test)
 ```
 
 ## 8. Triển khai lên Vercel
@@ -118,10 +128,23 @@ Dự án đã được đóng gói sẵn cho Vercel (serverless):
   mọi request được định tuyến thẳng vào ứng dụng, **không cần `rewrites`**.
 - **`vercel.json`** — khai báo `framework: "flask"`, `maxDuration: 60s` và
   `includeFiles: "fintech/**"` (giá trị **chuỗi** — không dùng mảng) để đóng gói templates/static.
-- **`.vercelignore`** — loại `data/`, `tools/`, bộ đệm khỏi bundle.
+- **`.vercelignore`** — loại `.env`, `tools/`, bộ đệm khỏi bundle (token không bao giờ được tải lên).
 - **`.python-version`** — chốt Python **3.12** cho Vercel (phiên bản mặc định của `@vercel/python`).
-- **`fintech/config.py`** — tự nhận diện `VERCEL=1`: chuyển SQLite sang `/tmp/finviet-pro`
-  (vì hệ thống tệp trên Vercel chỉ ghi được ở `/tmp`).
+- **`fintech/config.py`** — dữ liệu nằm ở **InfluxDB Cloud** nên **không phụ thuộc hệ thống tệp**:
+  chạy local hay trên Vercel (serverless) đều dùng chung một bucket, dữ liệu bền vững.
+
+### Bắt buộc: khai báo biến môi trường InfluxDB trên Vercel
+
+Vào **Project → Settings → Environment Variables**, thêm (cho cả Production + Preview):
+
+| Biến | Giá trị |
+| --- | --- |
+| `INFLUXDB_TOKEN` | Token API InfluxDB của bạn (**bắt buộc** — không có sẽ báo lỗi 500 khi truy cập dữ liệu) |
+| `INFLUXDB_HOST` | `https://us-east-1-1.aws.cloud2.influxdata.com` (mặc định, có thể bỏ qua) |
+| `INFLUXDB_ORG` | `mcpsoftware` (mặc định, có thể bỏ qua) |
+| `INFLUXDB_BUCKET` | `fintech` (mặc định, có thể bỏ qua) |
+
+Sau khi thêm biến, bấm **Redeploy** để áp dụng.
 
 ### Cách 1: Vercel CLI
 
@@ -144,17 +167,17 @@ giữ nguyên cấu hình mặc định (Vercel tự đọc `vercel.json` + `req
 
 | Vấn đề | Hệ quả | Khắc phục |
 | --- | --- | --- |
-| Hệ thống tệp chỉ ghi được `/tmp`, **không bền vững** | Vị thế, cảnh báo, cài đặt, lịch sử sàng lọc có thể **mất khi cold start** hoặc đổi instance | Phù hợp demo; muốn lưu lâu dài hãy deploy lên VPS/Render/Railway (SQLite nguyên vẹn) hoặc đặt biến `FINTECH_DATA_DIR` trỏ tới ổ đĩa bền vững |
+| **Retention của bucket InfluxDB = 30 ngày** (giới hạn của gói Cloud Serverless miễn phí) | Dữ liệu **không ghi mới/đọc lại trong 30 ngày** sẽ bị xóa tự động (nến cũ, phân tích cũ, cảnh báo đã xem) | Nến dùng **ngày ingest** làm timestamp nên không bị xóa non; dữ liệu đang dùng (cài đặt, vị thế, watchlist, cảnh báo chưa xem) được **touch lại mỗi lần khởi động** app để giữ trong cửa sổ 30 ngày |
 | Hàm bị giới hạn thời gian (`maxDuration: 60`) | Sàng lọc/ quét danh mục lớn có thể bị cắt giữa chừng | Chỉ nên sàng lọc danh sách nhỏ (≤ 50 mã); phiên chạy dang dở tự chuyển `ERROR` sau 30 phút |
 | Instance ngủ sau khi trả response | Cảnh báo "quét tự động" chỉ chạy khi có request | Bấm **Quét danh mục** trên web để quét theo nhu cầu |
 | Cold start | Request đầu tiên chậm vài giây | Bình thường với serverless |
-| Cần Internet ra ngoài | Không truy cập được Vietcap = không có dữ liệu | Kiểm tra bằng `GET /api/health` (trả về `"serverless": true`) |
+| Cần Internet ra ngoài | Không truy cập được Vietcap/InfluxDB = không có dữ liệu | Kiểm tra bằng `GET /api/health` (trả về `"serverless": true`, `"storage": "influxdb-cloud"`) |
 
 ### Kiểm tra sau khi deploy
 
 ```bash
 curl https://<ten-app>.vercel.app/api/health
-# {"status":"ok","app":"FinViet Pro","serverless":true,"storage":"ephemeral",...}
+# {"status":"ok","app":"FinViet Pro","serverless":true,"storage":"influxdb-cloud",...}
 ```
 
 ---

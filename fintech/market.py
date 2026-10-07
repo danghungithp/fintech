@@ -92,8 +92,8 @@ def dividend_events(symbol: str, limit: int = 8) -> list[dict]:
 
 
 def refresh_symbol_list(force: bool = False) -> int:
-    """Download the full Vietcap listing into SQLite (throttled)."""
-    stats = db.query_one("SELECT COUNT(*) AS n, MAX(updated_at) AS updated FROM symbols")
+    """Download the full Vietcap listing into InfluxDB (throttled)."""
+    stats = db.symbol_stats()
     if not force and stats and stats["n"] and _hours_since(stats.get("updated")) <= SYMBOLS_REFRESH_HOURS:
         return 0
     records = vietcap.fetch_vietnam_listings()

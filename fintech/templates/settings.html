@@ -37,7 +37,7 @@
     <div class="card-head">
       <div>
         <h2>Dữ liệu &amp; hiệu năng</h2>
-        <p class="sub">Bộ đệm SQLite giúp giảm số lần gọi Vietcap API.</p>
+        <p class="sub">Bộ đệm InfluxDB giúp giảm số lần gọi Vietcap API.</p>
       </div>
     </div>
     <div class="grid grid-2">
@@ -70,7 +70,7 @@
       <button class="btn btn-primary" id="s-save">Lưu cài đặt</button>
       <button class="btn btn-ghost" id="s-reload">Khôi phục giá trị đang lưu</button>
     </div>
-    <span class="hint">Cài đặt lưu trong SQLite (bảng settings) — áp dụng ngay cho các phân tích tiếp theo.</span>
+    <span class="hint">Cài đặt lưu trong InfluxDB (measurement settings) — áp dụng ngay cho các phân tích tiếp theo.</span>
   </div>
 </section>
 
@@ -82,7 +82,7 @@
     <div class="kv-row"><span class="k">Nguồn dữ liệu</span><span class="v">Vietcap Trading API (giá EOD, chỉ số, cổ tức)</span></div>
     <div class="kv-row"><span class="k">Phương pháp điểm mua/bán</span><span class="v">Fibonacci thoái lui &amp; mở rộng, Pivot Point, Hỗ trợ/Kháng cự, RSI/MACD/MA</span></div>
     <div class="kv-row"><span class="k">Quản trị vốn</span><span class="v">Kelly Criterion 1/2 — Edward Thorp (điểm thắng × tỷ lệ payoff)</span></div>
-    <div class="kv-row"><span class="k">Lưu trữ</span><span class="v">SQLite (data/fintech.db) — nến, chỉ số, phân tích, sàng lọc, vị thế, cảnh báo</span></div>
+    <div class="kv-row"><span class="k">Lưu trữ</span><span class="v">InfluxDB Cloud (bucket) — nến, chỉ số, phân tích, sàng lọc, vị thế, cảnh báo</span></div>
     <div class="kv-row"><span class="k">Lưu ý</span><span class="v">Công cụ tham khảo, không phải khuyến nghị đầu tư</span></div>
   </div>
 </section>

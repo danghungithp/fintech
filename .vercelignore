@@ -2,6 +2,9 @@
 data/
 tools/
 .vercel-tmp/
+.qoder/
+.env
+.env.*
 **/__pycache__/
 *.pyc
 *.log

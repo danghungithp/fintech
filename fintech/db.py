@@ -1,140 +1,42 @@
-"""SQLite storage layer: schema, generic helpers and domain stores."""
+"""InfluxDB (Cloud Serverless) storage layer: measurements + domain stores.
+
+The former SQLite schema is mapped onto InfluxDB 3 measurements. Cloud
+Serverless rejects all DML (UPDATE / DELETE / INSERT INTO) and enforces a
+30-day retention on the bucket, so this layer follows two rules:
+
+* Writes are append-only. The newest point per logical key (by point time) is
+  the current version of a row; read paths dedupe in Python and ``None``
+  defaults cover fields a version does not carry.
+* Points are stamped with ingest time, never with historical dates — points
+  older than the retention window would be dropped on write. Dates that carry
+  meaning (candle session, ex-dividend date) are stored as plain fields.
+
+Deletes and acknowledgements append a new version for the same key (tombstone
+flags) instead of mutating history. ``init_db()`` "touches" active rows
+(settings, positions, watchlist, unacknowledged alerts, recent analyses) on
+every process start, refreshing their retention clock so irreplaceable user
+data survives indefinitely as long as the app is opened at least once per
+30 days. Cache-like data (candles, fundamentals, symbols, screen logs) is
+refetched or recomputed, so it is intentionally left to age out.
+"""
 from __future__ import annotations
 
 import json
-import sqlite3
-from contextlib import contextmanager
-from datetime import datetime
-from typing import Any, Iterable, Iterator, Optional
+import threading
+import time
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
 
-from .config import DB_PATH, DEFAULT_SETTINGS
+from influxdb_client_3 import Point
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS symbols (
-    symbol            TEXT PRIMARY KEY,
-    exchange          TEXT,
-    type              TEXT,
-    organ_name        TEXT,
-    organ_short_name  TEXT,
-    updated_at        TEXT
-);
+from . import influx
+from .config import DEFAULT_SETTINGS
 
-CREATE TABLE IF NOT EXISTS ohlcv (
-    symbol   TEXT NOT NULL,
-    date     TEXT NOT NULL,
-    open     REAL, high REAL, low REAL, close REAL, volume REAL,
-    PRIMARY KEY (symbol, date)
-);
-CREATE INDEX IF NOT EXISTS idx_ohlcv_symbol ON ohlcv(symbol, date);
+_lock = threading.Lock()
+_initialized = False
 
-CREATE TABLE IF NOT EXISTS fundamentals (
-    symbol         TEXT PRIMARY KEY,
-    div_ps_ttm     REAL,
-    market_cap     REAL,
-    rating         TEXT,
-    target_price   REAL,
-    sector         TEXT,
-    extra          TEXT,
-    updated_at     TEXT
-);
-
-CREATE TABLE IF NOT EXISTS dividend_events (
-    symbol   TEXT NOT NULL,
-    ex_date  TEXT NOT NULL,
-    amount   REAL,
-    title    TEXT,
-    PRIMARY KEY (symbol, ex_date)
-);
-
-CREATE TABLE IF NOT EXISTS analyses (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    symbol       TEXT NOT NULL,
-    created_at   TEXT NOT NULL,
-    price        REAL,
-    signal       TEXT,
-    score        REAL,
-    buy_zone_low REAL, buy_zone_high REAL,
-    stop_loss    REAL, target1 REAL, target2 REAL,
-    payload      TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_analyses_symbol ON analyses(symbol, created_at);
-
-CREATE TABLE IF NOT EXISTS screen_runs (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_at  TEXT NOT NULL,
-    finished_at TEXT,
-    status      TEXT NOT NULL,
-    universe    TEXT,
-    criteria    TEXT,
-    total       INTEGER DEFAULT 0,
-    processed   INTEGER DEFAULT 0,
-    failed      INTEGER DEFAULT 0,
-    error       TEXT
-);
-
-CREATE TABLE IF NOT EXISTS screen_results (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id         INTEGER NOT NULL,
-    symbol         TEXT NOT NULL,
-    signal         TEXT,
-    score          REAL,
-    price          REAL,
-    change_pct     REAL,
-    dividend_yield REAL,
-    rsi            REAL,
-    avg_volume     REAL,
-    buy_zone_low   REAL, buy_zone_high REAL,
-    stop_loss      REAL, target1 REAL,
-    risk_reward    REAL,
-    extra          TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_screen_results_run ON screen_results(run_id);
-
-CREATE TABLE IF NOT EXISTS positions (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    symbol      TEXT NOT NULL,
-    quantity    INTEGER NOT NULL,
-    avg_cost    REAL NOT NULL,
-    buy_date    TEXT,
-    stop_loss   REAL,
-    take_profit REAL,
-    note        TEXT,
-    status      TEXT DEFAULT 'OPEN',
-    created_at  TEXT, updated_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS watchlist (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    symbol       TEXT UNIQUE NOT NULL,
-    note         TEXT,
-    target_price REAL,
-    created_at   TEXT
-);
-
-CREATE TABLE IF NOT EXISTS alerts (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    symbol       TEXT NOT NULL,
-    type         TEXT NOT NULL,
-    severity     TEXT NOT NULL,
-    message      TEXT,
-    price        REAL,
-    day          TEXT NOT NULL,
-    created_at   TEXT NOT NULL,
-    acknowledged INTEGER DEFAULT 0,
-    UNIQUE(symbol, type, day)
-);
-CREATE INDEX IF NOT EXISTS idx_alerts_day ON alerts(day, acknowledged);
-
-CREATE TABLE IF NOT EXISTS settings (
-    key   TEXT PRIMARY KEY,
-    value TEXT
-);
-
-CREATE TABLE IF NOT EXISTS cache_stamps (
-    symbol     TEXT PRIMARY KEY,
-    updated_at TEXT
-);
-"""
+# Column names that exist only inside InfluxDB (never part of the public rows).
+_INTERNAL = ("time",)
 
 
 def now_str() -> str:
@@ -145,305 +47,808 @@ def today_str() -> str:
     return datetime.now().strftime("%Y-%m-%d")
 
 
-def _connect() -> sqlite3.Connection:
-    con = sqlite3.connect(DB_PATH, timeout=30)
-    con.row_factory = sqlite3.Row
-    con.execute("PRAGMA journal_mode=WAL")
-    con.execute("PRAGMA synchronous=NORMAL")
-    return con
+# ------------------------------------------------------------------ helpers
+
+def _new_id() -> int:
+    """Microsecond epoch id — unique per process, fits in a JS safe integer."""
+    return time.time_ns() // 1000
 
 
-@contextmanager
-def get_db() -> Iterator[sqlite3.Connection]:
-    con = _connect()
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _stamp(index: int = 0) -> datetime:
+    """Ingest timestamp for one point of a batch.
+
+    Points sharing a measurement, tag set and timestamp overwrite each other,
+    so points written within the same batch (candles of one symbol, events of
+    one symbol, results of one run) get microsecond offsets to stay distinct.
+    """
+    return _utcnow() + timedelta(microseconds=index)
+
+
+def _point(measure: str, tags: dict, fields: dict, ts: Optional[datetime] = None) -> Point:
+    point = Point(measure)
+    for key, value in tags.items():
+        point = point.tag(key, str(value))
+    for key, value in fields.items():
+        if value is None:
+            continue
+        point = point.field(key, value)
+    return point.time(ts or _utcnow())
+
+
+def _write(points: list) -> None:
+    influx.write_points(points)
+
+
+def _fetch(statement: str) -> list[dict]:
+    return influx.fetch(statement)
+
+
+def _sql_str(value: Any) -> str:
+    return influx.sql_str(value)
+
+
+def _latest(rows: list[dict], key) -> list[dict]:
+    """Keep only the newest point (by ``time``) for each logical key."""
+    best: dict = {}
+    for row in rows:
+        row_key = key(row)
+        current = best.get(row_key)
+        if current is None or row["time"] > current["time"]:
+            best[row_key] = row
+    return list(best.values())
+
+
+def _public(row: dict, drop: tuple = ()) -> dict:
+    return {k: v for k, v in row.items() if k not in _INTERNAL and k not in drop}
+
+
+def _as_int(value: Any, default: int = 0) -> int:
     try:
-        yield con
-        con.commit()
-    except Exception:
-        con.rollback()
-        raise
-    finally:
-        con.close()
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
+
+def _json_load(raw: Any, fallback: Any) -> Any:
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _drop_keys(row: dict, keys: tuple) -> dict:
+    return {k: v for k, v in row.items() if k not in keys}
+
+
+# A field is only present in the table schema once some row wrote it, so public
+# rows are rebuilt with the full expected key set (None for absent values).
+
+_POSITION_KEYS = (
+    "symbol", "quantity", "avg_cost", "buy_date", "stop_loss", "take_profit",
+    "note", "status", "created_at", "updated_at",
+)
+_WATCH_KEYS = ("symbol", "note", "target_price", "created_at")
+_RUN_KEYS = (
+    "created_at", "finished_at", "status", "universe", "criteria",
+    "total", "processed", "failed", "error",
+)
+_RESULT_KEYS = (
+    "symbol", "signal", "score", "price", "change_pct", "dividend_yield",
+    "rsi", "avg_volume", "buy_zone_low", "buy_zone_high", "stop_loss",
+    "target1", "risk_reward", "extra",
+)
+
+
+def _position_row(row: dict) -> dict:
+    out = {key: row.get(key) for key in _POSITION_KEYS}
+    out["id"] = _as_int(row.get("id"))
+    return out
+
+
+def _watch_row(row: dict) -> dict:
+    out = {key: row.get(key) for key in _WATCH_KEYS}
+    out["id"] = _as_int(row.get("id"))
+    return out
+
+
+def _run_row(row: dict) -> dict:
+    out = {key: row.get(key) for key in _RUN_KEYS}
+    out["id"] = _as_int(row.get("id"))
+    return out
+
+
+def _result_row(row: dict) -> dict:
+    out = {key: row.get(key) for key in _RESULT_KEYS}
+    out["run_id"] = _as_int(row.get("run_id"))
+    return out
+
+
+# ------------------------------------------------------------- init / touch
 
 def init_db() -> None:
-    with get_db() as con:
-        con.executescript(_SCHEMA)
-    for key, value in DEFAULT_SETTINGS.items():
-        if get_setting(key) is None:
-            set_setting(key, value)
+    """Prepare storage. Defaults are merged at read time, so the only work is
+    refreshing the retention clock of active user data (best-effort)."""
+    global _initialized
+    with _lock:
+        if _initialized:
+            return
+        _initialized = True
+    try:
+        _touch_active_rows()
+    except Exception:  # noqa: BLE001 - storage must not block app startup
+        pass
 
 
-def query(sql: str, args: Iterable = ()) -> list[dict]:
-    with get_db() as con:
-        rows = con.execute(sql, tuple(args)).fetchall()
-    return [dict(row) for row in rows]
+def _touch_active_rows() -> None:
+    """Re-write active rows with a fresh ingest timestamp.
 
+    Cloud Serverless keeps points for 30 days; touching keeps positions,
+    watchlist, settings, unacknowledged alerts and recent analyses alive while
+    the app is in use, without duplicating any logical row.
+    """
+    now = _utcnow()
+    points: list = []
 
-def query_one(sql: str, args: Iterable = ()) -> Optional[dict]:
-    rows = query(sql, args)
-    return rows[0] if rows else None
+    for row in _latest(_fetch("SELECT * FROM settings"), lambda r: r.get("key")):
+        points.append(_point("settings", {"key": row.get("key")}, {"value": row.get("value")}, ts=now))
 
+    for row in _latest(_fetch("SELECT * FROM positions"), lambda r: r.get("id")):
+        if row.get("deleted"):
+            continue
+        fields = _drop_keys(row, ("time", "id"))
+        points.append(_point("positions", {"id": row.get("id")}, fields, ts=now))
 
-def execute(sql: str, args: Iterable = ()) -> int:
-    with get_db() as con:
-        cur = con.execute(sql, tuple(args))
-        return cur.lastrowid or 0
+    for row in _latest(_fetch("SELECT * FROM watchlist"), lambda r: r.get("symbol")):
+        if row.get("deleted"):
+            continue
+        fields = _drop_keys(row, ("time", "id", "symbol"))
+        points.append(_point("watchlist", {"id": row.get("id"), "symbol": row.get("symbol")}, fields, ts=now))
 
+    for row in _latest(_fetch("SELECT * FROM alerts"), lambda r: (r.get("symbol"), r.get("alert_type"), r.get("day"))):
+        if _as_int(row.get("acknowledged")):
+            continue
+        fields = _drop_keys(row, ("time", "id", "symbol", "alert_type", "day"))
+        tags = {key: row.get(key) for key in ("id", "symbol", "alert_type", "day")}
+        points.append(_point("alerts", tags, fields, ts=now))
 
-def executemany(sql: str, rows: list[tuple]) -> None:
-    with get_db() as con:
-        con.executemany(sql, rows)
+    for row in _fetch("SELECT * FROM analyses ORDER BY time DESC LIMIT 10"):
+        fields = _drop_keys(row, ("time", "id"))
+        points.append(_point("analyses", {"id": row.get("id")}, fields, ts=now))
+
+    _write(points)
 
 
 # ---------------------------------------------------------------- settings
 
 def get_setting(key: str, default: Any = None) -> Any:
-    row = query_one("SELECT value FROM settings WHERE key = ?", (key,))
+    rows = _fetch("SELECT * FROM settings")
+    latest = {r.get("key"): r for r in _latest(rows, lambda r: r.get("key"))}
+    row = latest.get(key)
     if row is None:
         if default is not None:
             return default
         return DEFAULT_SETTINGS.get(key)
-    raw = row["value"]
-    try:
-        return json.loads(raw)
-    except (TypeError, ValueError):
-        return raw
+    return _json_load(row.get("value"), row.get("value"))
 
 
 def set_setting(key: str, value: Any) -> None:
-    execute(
-        "INSERT INTO settings(key, value) VALUES(?, ?) "
-        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        (key, json.dumps(value)),
-    )
+    _write([_point("settings", {"key": key}, {"value": json.dumps(value)})])
 
 
 def get_settings() -> dict:
     merged = dict(DEFAULT_SETTINGS)
-    for row in query("SELECT key, value FROM settings"):
-        try:
-            merged[row["key"]] = json.loads(row["value"])
-        except (TypeError, ValueError):
-            merged[row["key"]] = row["value"]
+    rows = _fetch("SELECT * FROM settings")
+    for row in _latest(rows, lambda r: r.get("key")):
+        merged[row.get("key")] = _json_load(row.get("value"), row.get("value"))
     return merged
 
 
-# ---------------------------------------------------------------- symbols
+# ----------------------------------------------------------------- symbols
+# The Vietcap listing is refreshed as a whole generation: every refresh writes
+# all rows under a new ``gen`` tag, so the newest generation is the listing.
+
+def _symbols_gen() -> Optional[str]:
+    rows = _fetch("SELECT MAX(gen) AS g FROM symbols")
+    value = rows[0].get("g") if rows else None
+    return str(value) if value else None
+
+
+def _current_symbols() -> list[dict]:
+    gen = _symbols_gen()
+    if not gen:
+        return []
+    return _fetch(f"SELECT * FROM symbols WHERE gen = {_sql_str(gen)}")
+
 
 def save_symbols(records: list[dict]) -> int:
-    rows = [
-        (
-            r.get("symbol"),
-            r.get("exchange"),
-            r.get("type"),
-            r.get("organ_name"),
-            r.get("organ_short_name"),
-            now_str(),
-        )
-        for r in records
-        if r.get("symbol")
-    ]
+    rows = [r for r in records if r.get("symbol")]
     if not rows:
         return 0
-    executemany(
-        "INSERT INTO symbols(symbol, exchange, type, organ_name, organ_short_name, updated_at) "
-        "VALUES(?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT(symbol) DO UPDATE SET exchange = excluded.exchange, type = excluded.type, "
-        "organ_name = excluded.organ_name, organ_short_name = excluded.organ_short_name, "
-        "updated_at = excluded.updated_at",
-        rows,
+    gen = str(_new_id())
+    now = _utcnow()
+    updated_at = now_str()
+    points = [
+        _point(
+            "symbols",
+            {"gen": gen, "symbol": r["symbol"]},
+            {
+                "exchange": r.get("exchange"),
+                "type": r.get("type"),
+                "organ_name": r.get("organ_name"),
+                "organ_short_name": r.get("organ_short_name"),
+                "updated_at": updated_at,
+            },
+            ts=now,
+        )
+        for r in rows
+    ]
+    _write(points)
+    return len(points)
+
+
+def symbol_stats() -> Optional[dict]:
+    """COUNT + newest updated_at of the current listing generation."""
+    gen = _symbols_gen()
+    if not gen:
+        return {"n": 0, "updated": None}
+    rows = _fetch(
+        f"SELECT COUNT(*) AS n, MAX(updated_at) AS updated FROM symbols WHERE gen = {_sql_str(gen)}"
     )
-    return len(rows)
+    return rows[0] if rows else {"n": 0, "updated": None}
 
 
 def symbol_meta(symbol: str) -> Optional[dict]:
-    return query_one("SELECT * FROM symbols WHERE symbol = ?", (symbol.upper(),))
+    gen = _symbols_gen()
+    if not gen:
+        return None
+    rows = _fetch(
+        f"SELECT * FROM symbols WHERE gen = {_sql_str(gen)} AND symbol = {_sql_str(symbol.upper())}"
+        " ORDER BY time DESC LIMIT 1"
+    )
+    if not rows:
+        return None
+    return _public(rows[0], drop=("gen",))
+
+
+_EXCHANGE_RANK = {"HOSE": 0, "HNX": 1, "UPCOM": 2}
+
+
+def _exchange_rank(exchange: Any) -> int:
+    return _EXCHANGE_RANK.get(exchange or "", 3)
 
 
 def search_symbols(term: str = "", limit: int = 20) -> list[dict]:
+    rows = _current_symbols()
+    if not rows:
+        return []
     term = (term or "").strip().upper()
-    exchange_rank = (
-        "CASE exchange WHEN 'HOSE' THEN 0 WHEN 'HNX' THEN 1 WHEN 'UPCOM' THEN 2 ELSE 3 END"
-    )
     if term:
-        like = f"%{term}%"
-        return query(
-            "SELECT symbol, exchange, organ_short_name, organ_name FROM symbols "
-            "WHERE symbol LIKE ? OR UPPER(organ_short_name) LIKE ? OR UPPER(organ_name) LIKE ? "
-            "ORDER BY CASE WHEN symbol = ? THEN 0 WHEN symbol LIKE ? THEN 1 ELSE 2 END, "
-            f"CASE WHEN type = 'STOCK' THEN 0 ELSE 1 END, {exchange_rank}, symbol "
-            "LIMIT ?",
-            (like, like, like, term, f"{term}%", limit),
-        )
-    return query(
-        "SELECT symbol, exchange, organ_short_name, organ_name FROM symbols "
-        "WHERE type = 'STOCK' OR type IS NULL OR type = '' "
-        f"ORDER BY {exchange_rank}, symbol LIMIT ?",
-        (limit,),
-    )
+        def matches(row: dict) -> bool:
+            return (
+                term in (row.get("symbol") or "")
+                or term in (row.get("organ_short_name") or "").upper()
+                or term in (row.get("organ_name") or "").upper()
+            )
+
+        def tier(row: dict) -> int:
+            symbol = row.get("symbol") or ""
+            if symbol == term:
+                return 0
+            if symbol.startswith(term):
+                return 1
+            return 2
+
+        picked = [r for r in rows if matches(r)]
+        picked.sort(key=lambda r: (
+            tier(r),
+            0 if r.get("type") == "STOCK" else 1,
+            _exchange_rank(r.get("exchange")),
+            r.get("symbol") or "",
+        ))
+    else:
+        picked = [r for r in rows if (r.get("type") or "") in ("STOCK", "")]
+        picked.sort(key=lambda r: (_exchange_rank(r.get("exchange")), r.get("symbol") or ""))
+    return [
+        {
+            "symbol": r.get("symbol"),
+            "exchange": r.get("exchange"),
+            "organ_short_name": r.get("organ_short_name"),
+            "organ_name": r.get("organ_name"),
+        }
+        for r in picked[:limit]
+    ]
 
 
-# ---------------------------------------------------------------- candles
+def symbols_by_exchange(exchange: str) -> list[str]:
+    rows = _current_symbols()
+    picked = [
+        r for r in rows
+        if (r.get("exchange") or "") == exchange and (r.get("type") == "STOCK" or r.get("type") == "")
+    ]
+    picked.sort(key=lambda r: r.get("symbol") or "")
+    return [r["symbol"] for r in picked]
+
+
+# ----------------------------------------------------------------- candles
+# Points are stamped with ingest time (history beyond the retention window
+# would otherwise be dropped); the session date is the ``trade_date`` field and
+# is the dedupe key. Unchanged sessions are not rewritten, which keeps the
+# measurement roughly bounded by the history window.
 
 def save_candles(symbol: str, candles: list[dict]) -> None:
-    rows = [
-        (
-            symbol.upper(),
-            c["t"],
+    symbol = symbol.upper()
+    rows = [c for c in candles if c.get("t")]
+    if not rows:
+        return
+    existing_rows = _fetch(f"SELECT * FROM candles WHERE symbol = {_sql_str(symbol)}")
+    existing = {r.get("trade_date"): r for r in _latest(existing_rows, lambda r: r.get("trade_date"))}
+    keys = ("open", "high", "low", "close", "volume")
+    points = []
+    for index, c in enumerate(rows):
+        values = (
             float(c["o"]),
             float(c["h"]),
             float(c["l"]),
             float(c["c"]),
             float(c.get("v") or 0),
         )
-        for c in candles
-        if c.get("t")
-    ]
-    if not rows:
-        return
-    executemany(
-        "INSERT INTO ohlcv(symbol, date, open, high, low, close, volume) "
-        "VALUES(?, ?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT(symbol, date) DO UPDATE SET open = excluded.open, high = excluded.high, "
-        "low = excluded.low, close = excluded.close, volume = excluded.volume",
-        rows,
-    )
+        current = existing.get(c["t"])
+        if current is not None and all(
+            (current.get(key) or 0) == value for key, value in zip(keys, values)
+        ):
+            continue
+        fields = {"trade_date": c["t"]}
+        fields.update(dict(zip(keys, values)))
+        points.append(_point("candles", {"symbol": symbol}, fields, ts=_stamp(index)))
+    _write(points)
 
 
 def load_candles(symbol: str, limit: int = 400) -> list[dict]:
-    rows = query(
-        "SELECT date, open, high, low, close, volume FROM ohlcv "
-        "WHERE symbol = ? ORDER BY date DESC LIMIT ?",
-        (symbol.upper(), limit),
-    )
+    symbol = symbol.upper()
+    rows = _fetch(f"SELECT * FROM candles WHERE symbol = {_sql_str(symbol)}")
+    rows = _latest([r for r in rows if r.get("trade_date")], lambda r: r.get("trade_date"))
+    rows.sort(key=lambda r: r.get("trade_date"), reverse=True)
+    rows = rows[:limit]
     rows.reverse()
     return [
         {
-            "t": r["date"],
-            "o": r["open"],
-            "h": r["high"],
-            "l": r["low"],
-            "c": r["close"],
-            "v": r["volume"] or 0,
+            "t": r.get("trade_date"),
+            "o": r.get("open"),
+            "h": r.get("high"),
+            "l": r.get("low"),
+            "c": r.get("close"),
+            "v": r.get("volume") or 0,
         }
         for r in rows
     ]
 
 
 def candle_stats(symbol: str) -> Optional[dict]:
-    return query_one(
-        "SELECT MAX(date) AS last_date, COUNT(*) AS n FROM ohlcv WHERE symbol = ?",
-        (symbol.upper(),),
-    )
+    symbol = symbol.upper()
+    rows = _fetch(f"SELECT * FROM candles WHERE symbol = {_sql_str(symbol)}")
+    rows = _latest([r for r in rows if r.get("trade_date")], lambda r: r.get("trade_date"))
+    if not rows:
+        return {"last_date": None, "n": 0}
+    return {"last_date": max(r["trade_date"] for r in rows), "n": len(rows)}
 
 
 def save_cache_stamp(symbol: str) -> None:
-    execute(
-        "INSERT INTO cache_stamps(symbol, updated_at) VALUES(?, ?) "
-        "ON CONFLICT(symbol) DO UPDATE SET updated_at = excluded.updated_at",
-        (symbol.upper(), now_str()),
-    )
+    _write([_point("cache_stamps", {"symbol": symbol.upper()}, {"updated_at": now_str()})])
 
 
 def load_cache_stamp(symbol: str) -> Optional[str]:
-    row = query_one("SELECT updated_at FROM cache_stamps WHERE symbol = ?", (symbol.upper(),))
-    return row["updated_at"] if row else None
+    rows = _fetch(
+        f"SELECT * FROM cache_stamps WHERE symbol = {_sql_str(symbol.upper())} ORDER BY time DESC LIMIT 1"
+    )
+    return rows[0].get("updated_at") if rows else None
 
 
 # ------------------------------------------------------------ fundamentals
 
 def save_fundamentals(symbol: str, data: dict) -> None:
-    execute(
-        "INSERT INTO fundamentals(symbol, div_ps_ttm, market_cap, rating, target_price, sector, extra, updated_at) "
-        "VALUES(?, ?, ?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT(symbol) DO UPDATE SET div_ps_ttm = excluded.div_ps_ttm, "
-        "market_cap = excluded.market_cap, rating = excluded.rating, "
-        "target_price = excluded.target_price, sector = excluded.sector, "
-        "extra = excluded.extra, updated_at = excluded.updated_at",
-        (
-            symbol.upper(),
-            data.get("div_ps_ttm"),
-            data.get("market_cap"),
-            data.get("rating"),
-            data.get("target_price"),
-            data.get("sector"),
-            json.dumps(data.get("extra") or {}, ensure_ascii=False),
-            now_str(),
-        ),
-    )
+    _write([_point(
+        "fundamentals",
+        {"symbol": symbol.upper()},
+        {
+            "div_ps_ttm": data.get("div_ps_ttm"),
+            "market_cap": data.get("market_cap"),
+            "rating": data.get("rating"),
+            "target_price": data.get("target_price"),
+            "sector": data.get("sector"),
+            "extra": json.dumps(data.get("extra") or {}, ensure_ascii=False),
+            "updated_at": now_str(),
+        },
+    )])
 
 
 def load_fundamentals(symbol: str) -> Optional[dict]:
-    row = query_one("SELECT * FROM fundamentals WHERE symbol = ?", (symbol.upper(),))
-    if not row:
+    rows = _fetch(
+        f"SELECT * FROM fundamentals WHERE symbol = {_sql_str(symbol.upper())} ORDER BY time DESC LIMIT 1"
+    )
+    if not rows:
         return None
-    try:
-        row["extra"] = json.loads(row.get("extra") or "{}")
-    except (TypeError, ValueError):
-        row["extra"] = {}
+    row = _public(rows[0])
+    row["extra"] = _json_load(row.get("extra"), {})
     return row
 
 
 def save_dividend_events(symbol: str, events: list[dict]) -> None:
-    rows = [
-        (symbol.upper(), e["ex_date"], e.get("amount"), e.get("title"))
-        for e in events
-        if e.get("ex_date")
-    ]
+    rows = [e for e in events if e.get("ex_date")]
     if not rows:
         return
-    executemany(
-        "INSERT INTO dividend_events(symbol, ex_date, amount, title) VALUES(?, ?, ?, ?) "
-        "ON CONFLICT(symbol, ex_date) DO UPDATE SET amount = excluded.amount, title = excluded.title",
-        rows,
-    )
+    symbol = symbol.upper()
+    points = [
+        _point(
+            "dividend_events",
+            {"symbol": symbol},
+            {"ex_date": e["ex_date"], "amount": e.get("amount"), "title": e.get("title")},
+            ts=_stamp(index),
+        )
+        for index, e in enumerate(rows)
+    ]
+    _write(points)
 
 
 def load_dividend_events(symbol: str, limit: int = 12) -> list[dict]:
-    return query(
-        "SELECT ex_date, amount, title FROM dividend_events WHERE symbol = ? "
-        "ORDER BY ex_date DESC LIMIT ?",
-        (symbol.upper(), limit),
-    )
+    rows = _fetch(f"SELECT * FROM dividend_events WHERE symbol = {_sql_str(symbol.upper())}")
+    rows = _latest([r for r in rows if r.get("ex_date")], lambda r: r.get("ex_date"))
+    rows.sort(key=lambda r: r.get("ex_date"), reverse=True)
+    return [
+        {"ex_date": r.get("ex_date"), "amount": r.get("amount"), "title": r.get("title")}
+        for r in rows[:limit]
+    ]
 
 
-# -------------------------------------------------------------- analyses
+# ---------------------------------------------------------------- analyses
 
 def save_analysis(payload: dict) -> None:
     levels = payload.get("levels") or {}
     signal = payload.get("signal") or {}
     buy_zone = levels.get("buy_zone") or [None, None]
     sell_points = levels.get("sell_points") or []
-    execute(
-        "INSERT INTO analyses(symbol, created_at, price, signal, score, buy_zone_low, buy_zone_high, "
-        "stop_loss, target1, target2, payload) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            payload.get("symbol"),
-            now_str(),
-            payload.get("price"),
-            signal.get("code"),
-            signal.get("score"),
-            buy_zone[0] if len(buy_zone) > 0 else None,
-            buy_zone[1] if len(buy_zone) > 1 else None,
-            levels.get("stop_loss"),
-            (sell_points[0] or {}).get("price") if sell_points else None,
-            (sell_points[1] or {}).get("price") if len(sell_points) > 1 else None,
-            json.dumps(payload, ensure_ascii=False),
-        ),
-    )
+    _write([_point(
+        "analyses",
+        {"id": str(_new_id())},
+        {
+            "symbol": payload.get("symbol"),
+            "created_at": now_str(),
+            "price": payload.get("price"),
+            "signal": signal.get("code"),
+            "score": signal.get("score"),
+            "buy_zone_low": buy_zone[0] if len(buy_zone) > 0 else None,
+            "buy_zone_high": buy_zone[1] if len(buy_zone) > 1 else None,
+            "stop_loss": levels.get("stop_loss"),
+            "target1": (sell_points[0] or {}).get("price") if sell_points else None,
+            "target2": (sell_points[1] or {}).get("price") if len(sell_points) > 1 else None,
+            "payload": json.dumps(payload, ensure_ascii=False),
+        },
+    )])
 
 
 def recent_analyses(limit: int = 20) -> list[dict]:
-    return query(
-        "SELECT id, symbol, created_at, price, signal, score, buy_zone_low, buy_zone_high, "
-        "stop_loss, target1 FROM analyses ORDER BY id DESC LIMIT ?",
-        (limit,),
-    )
+    rows = _fetch(f"SELECT * FROM analyses ORDER BY time DESC LIMIT {int(limit)}")
+    return [
+        {
+            "id": _as_int(r.get("id")),
+            "symbol": r.get("symbol"),
+            "created_at": r.get("created_at"),
+            "price": r.get("price"),
+            "signal": r.get("signal"),
+            "score": r.get("score"),
+            "buy_zone_low": r.get("buy_zone_low"),
+            "buy_zone_high": r.get("buy_zone_high"),
+            "stop_loss": r.get("stop_loss"),
+            "target1": r.get("target1"),
+        }
+        for r in rows
+    ]
 
 
 def last_analysis(symbol: str) -> Optional[dict]:
-    return query_one(
-        "SELECT * FROM analyses WHERE symbol = ? ORDER BY id DESC LIMIT 1",
-        (symbol.upper(),),
+    rows = _fetch(
+        f"SELECT * FROM analyses WHERE symbol = {_sql_str(symbol.upper())} ORDER BY time DESC LIMIT 1"
     )
+    if not rows:
+        return None
+    row = _public(rows[0])
+    row["id"] = _as_int(row.get("id"))
+    return row
+
+
+# ------------------------------------------------------------- screen runs
+
+def screen_run_create(universe_json: str, criteria_json: str) -> int:
+    run_id = _new_id()
+    _write([_point(
+        "screen_runs",
+        {"id": str(run_id)},
+        {
+            "created_at": now_str(),
+            "status": "RUNNING",
+            "universe": universe_json,
+            "criteria": criteria_json,
+            "total": 0,
+            "processed": 0,
+            "failed": 0,
+        },
+    )])
+    return run_id
+
+
+def screen_run_latest(run_id: int) -> Optional[dict]:
+    rows = _fetch(
+        f"SELECT * FROM screen_runs WHERE id = {_sql_str(_as_int(run_id))} ORDER BY time DESC LIMIT 1"
+    )
+    if not rows:
+        return None
+    return _run_row(rows[0])
+
+
+def screen_run_update(run_id: int, updates: dict) -> None:
+    """Append a new full-state version of a run (field merge over latest)."""
+    row = screen_run_latest(run_id)
+    if row is None:
+        return
+    merged = {**row, **updates}
+    merged.pop("id", None)
+    _write([_point("screen_runs", {"id": str(_as_int(run_id))}, merged)])
+
+
+def screen_run_latest_running() -> Optional[dict]:
+    # Older versions of a finished run still match ``status = 'RUNNING'``, so
+    # candidates are collected first and their full version history is then
+    # deduped before checking which runs are still running.
+    candidates = _fetch("SELECT id FROM screen_runs WHERE status = 'RUNNING'")
+    ids = {_as_int(r.get("id")) for r in candidates if r.get("id")}
+    if not ids:
+        return None
+    id_list = ", ".join(_sql_str(i) for i in sorted(ids))
+    rows = _fetch(f"SELECT * FROM screen_runs WHERE id IN ({id_list})")
+    running = [r for r in _latest(rows, lambda r: r.get("id")) if r.get("status") == "RUNNING"]
+    if not running:
+        return None
+    row = max(running, key=lambda r: _as_int(r.get("id")))
+    return {"id": _as_int(row.get("id")), "created_at": row.get("created_at")}
+
+
+def screen_run_ids(limit: int = 12) -> list[int]:
+    rows = _fetch(
+        f"SELECT id, MAX(time) AS t FROM screen_runs GROUP BY id ORDER BY t DESC LIMIT {int(limit)}"
+    )
+    return [_as_int(r.get("id")) for r in rows if r.get("id")]
+
+
+def screen_runs_latest(run_ids: list[int]) -> dict:
+    ids = [_as_int(i) for i in run_ids]
+    if not ids:
+        return {}
+    id_list = ", ".join(_sql_str(i) for i in ids)
+    rows = _fetch(f"SELECT * FROM screen_runs WHERE id IN ({id_list})")
+    out: dict = {}
+    for row in _latest(rows, lambda r: r.get("id")):
+        public = _run_row(row)
+        out[public["id"]] = public
+    return out
+
+
+# ---------------------------------------------------------- screen results
+
+def screen_results_save(batch: list[dict]) -> None:
+    if not batch:
+        return
+    points = [
+        _point("screen_results", {"run_id": str(_as_int(row.get("run_id")))},
+               _drop_keys(row, ("run_id",)), ts=_stamp(index))
+        for index, row in enumerate(batch)
+    ]
+    _write(points)
+
+
+def screen_results_for_run(run_id: int) -> list[dict]:
+    rows = _fetch(f"SELECT * FROM screen_results WHERE run_id = {_sql_str(_as_int(run_id))}")
+    out = [_result_row(row) for row in rows]
+
+    def sort_key(row: dict):
+        score = row.get("score")
+        dividend = row.get("dividend_yield")
+        return (score is None, -(score or 0.0), dividend is None, -(dividend or 0.0))
+
+    out.sort(key=sort_key)
+    return out
+
+
+def screen_results_counts(run_ids: list[int]) -> dict:
+    ids = [_as_int(i) for i in run_ids]
+    if not ids:
+        return {}
+    id_list = ", ".join(_sql_str(i) for i in ids)
+    rows = _fetch(
+        f"SELECT run_id, COUNT(*) AS n FROM screen_results WHERE run_id IN ({id_list}) GROUP BY run_id"
+    )
+    return {_as_int(r.get("run_id")): _as_int(r.get("n")) for r in rows}
+
+
+# --------------------------------------------------------------- positions
+
+def position_create(fields: dict) -> int:
+    position_id = _new_id()
+    _write([_point("positions", {"id": str(position_id)}, fields)])
+    return position_id
+
+
+def _position_rows() -> list[dict]:
+    rows = _fetch("SELECT * FROM positions")
+    out = []
+    for row in _latest(rows, lambda r: r.get("id")):
+        if row.get("deleted"):
+            continue
+        out.append(_position_row(row))
+    return out
+
+
+def positions_open() -> list[dict]:
+    rows = [r for r in _position_rows() if r.get("status") == "OPEN"]
+    rows.sort(key=lambda r: r.get("id"))
+    return rows
+
+
+def position_latest(position_id: int) -> Optional[dict]:
+    rows = _fetch(
+        f"SELECT * FROM positions WHERE id = {_sql_str(_as_int(position_id))} ORDER BY time DESC LIMIT 1"
+    )
+    if not rows or rows[0].get("deleted"):
+        return None
+    return _position_row(rows[0])
+
+
+def position_put(position_id: int, updates: dict) -> None:
+    """Append a new version merging ``updates`` over the latest row."""
+    row = position_latest(position_id)
+    if row is None:
+        return
+    merged = {**row, **updates, "updated_at": now_str()}
+    merged.pop("id", None)
+    _write([_point("positions", {"id": str(_as_int(position_id))}, merged)])
+
+
+def position_delete(position_id: int) -> None:
+    row = position_latest(position_id)
+    if row is None:
+        return
+    merged = {**row, "deleted": True}
+    merged.pop("id", None)
+    _write([_point("positions", {"id": str(_as_int(position_id))}, merged)])
+
+
+# --------------------------------------------------------------- watchlist
+
+def _watch_latest_by_symbol() -> dict:
+    rows = _fetch("SELECT * FROM watchlist")
+    return {r.get("symbol"): r for r in _latest(rows, lambda r: r.get("symbol"))}
+
+
+def watchlist_all() -> list[dict]:
+    out = []
+    for row in _watch_latest_by_symbol().values():
+        if row.get("deleted"):
+            continue
+        out.append(_watch_row(row))
+    out.sort(key=lambda r: r.get("id"), reverse=True)
+    return out
+
+
+def watch_add(symbol: str, note: Optional[str], target_price: Optional[float]) -> int:
+    """Upsert by symbol: an existing entry keeps its id and created_at."""
+    current = _watch_latest_by_symbol().get(symbol)
+    if current is not None and not current.get("deleted"):
+        watch_id = _as_int(current.get("id"))
+        created_at = current.get("created_at")
+    else:
+        watch_id = _new_id()
+        created_at = now_str()
+    _write([_point(
+        "watchlist",
+        {"id": str(watch_id), "symbol": symbol},
+        {"note": note, "target_price": target_price, "created_at": created_at},
+    )])
+    return watch_id
+
+
+def watch_remove(watch_id: int) -> None:
+    rows = _fetch(
+        f"SELECT * FROM watchlist WHERE id = {_sql_str(_as_int(watch_id))} ORDER BY time DESC LIMIT 1"
+    )
+    if not rows or rows[0].get("deleted"):
+        return
+    row = rows[0]
+    fields = _drop_keys(row, ("time", "id", "symbol"))
+    fields["deleted"] = True
+    _write([_point("watchlist", {"id": row.get("id"), "symbol": row.get("symbol")}, fields)])
+
+
+# ------------------------------------------------------------------ alerts
+# Key = (symbol, type, day). Re-raising the same alert refreshes message /
+# severity / price / created_at while preserving id and acknowledged (the
+# former ON CONFLICT semantics); acknowledging appends a new version.
+
+def _alerts_raw() -> list[dict]:
+    rows = _fetch("SELECT * FROM alerts")
+    return _latest(rows, lambda r: (r.get("symbol"), r.get("alert_type"), r.get("day")))
+
+
+def _alert_public(row: dict) -> dict:
+    return {
+        "id": _as_int(row.get("id")),
+        "symbol": row.get("symbol"),
+        "type": row.get("alert_type"),
+        "severity": row.get("severity"),
+        "message": row.get("message"),
+        "price": row.get("price"),
+        "day": row.get("day"),
+        "created_at": row.get("created_at"),
+        "acknowledged": _as_int(row.get("acknowledged")),
+    }
+
+
+def alert_upsert(symbol: str, alert_type: str, severity: str, message: str, price: Any) -> None:
+    day = today_str()
+    rows = _fetch(
+        "SELECT * FROM alerts"
+        f" WHERE symbol = {_sql_str(symbol)} AND alert_type = {_sql_str(alert_type)} AND day = {_sql_str(day)}"
+        " ORDER BY time DESC LIMIT 1"
+    )
+    current = rows[0] if rows else None
+    alert_id = current.get("id") if current else str(_new_id())
+    acknowledged = _as_int(current.get("acknowledged")) if current else 0
+    _write([_point(
+        "alerts",
+        {"id": alert_id, "symbol": symbol, "alert_type": alert_type, "day": day},
+        {
+            "severity": severity,
+            "message": message,
+            "price": price,
+            "created_at": now_str(),
+            "acknowledged": acknowledged,
+        },
+    )])
+
+
+def alerts_list(limit: int = 100, include_ack: bool = False) -> list[dict]:
+    rows = [_alert_public(r) for r in _alerts_raw()]
+    if not include_ack:
+        rows = [r for r in rows if not r["acknowledged"]]
+    rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    return rows[:limit]
+
+
+def alerts_count() -> int:
+    return sum(1 for r in _alerts_raw() if not _as_int(r.get("acknowledged")))
+
+
+def alert_ack(alert_id: int) -> None:
+    rows = _fetch(
+        f"SELECT * FROM alerts WHERE id = {_sql_str(_as_int(alert_id))} ORDER BY time DESC LIMIT 1"
+    )
+    if not rows:
+        return
+    row = rows[0]
+    fields = _drop_keys(row, ("time", "id", "symbol", "alert_type", "day"))
+    fields["acknowledged"] = 1
+    tags = {key: row.get(key) for key in ("id", "symbol", "alert_type", "day")}
+    _write([_point("alerts", tags, fields)])
+
+
+def alert_ack_all() -> None:
+    points = []
+    for row in _alerts_raw():
+        if _as_int(row.get("acknowledged")):
+            continue
+        fields = _drop_keys(row, ("time", "id", "symbol", "alert_type", "day"))
+        fields["acknowledged"] = 1
+        tags = {key: row.get(key) for key in ("id", "symbol", "alert_type", "day")}
+        points.append(_point("alerts", tags, fields))
+    _write(points)

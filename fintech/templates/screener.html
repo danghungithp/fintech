@@ -7,7 +7,7 @@
   <div class="card-head">
     <div>
       <h2>Tiêu chí sàng lọc</h2>
-      <p class="sub">Quét theo tín hiệu Fibonacci/Pivot, thanh khoản và tỷ suất cổ tức — dữ liệu Vietcap, kết quả lưu vào SQLite.</p>
+      <p class="sub">Quét theo tín hiệu Fibonacci/Pivot, thanh khoản và tỷ suất cổ tức — dữ liệu Vietcap, kết quả lưu vào InfluxDB.</p>
     </div>
     <button class="btn btn-primary" id="run-btn">Bắt đầu sàng lọc</button>
   </div>
@@ -117,7 +117,7 @@
 
   <section class="card">
     <div class="card-head">
-      <div><h3>Phiên sàng lọc gần đây</h3><p class="sub">Lịch sử lưu trong SQLite</p></div>
+      <div><h3>Phiên sàng lọc gần đây</h3><p class="sub">Lịch sử lưu trong InfluxDB</p></div>
       <button class="btn btn-sm btn-ghost" id="refresh-runs-btn">Làm mới</button>
     </div>
     <div class="alert-feed" id="recent-runs">

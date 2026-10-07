@@ -28,7 +28,7 @@ def _num(value):
 # ------------------------------------------------------------- positions
 
 def positions_overview() -> list[dict]:
-    rows = db.query("SELECT * FROM positions WHERE status = 'OPEN' ORDER BY id")
+    rows = db.positions_open()
     out: list[dict] = []
     for row in rows:
         payload = _analyze(row["symbol"])
@@ -89,50 +89,47 @@ def create_position(data: dict) -> int:
     if quantity <= 0 or not avg_cost or avg_cost <= 0:
         raise ValueError("Khối lượng và giá vốn phải lớn hơn 0")
     now = db.now_str()
-    return db.execute(
-        "INSERT INTO positions(symbol, quantity, avg_cost, buy_date, stop_loss, take_profit, note, status, created_at, updated_at) "
-        "VALUES(?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)",
-        (
-            symbol,
-            quantity,
-            avg_cost,
-            data.get("buy_date") or db.today_str(),
-            _num(data.get("stop_loss")),
-            _num(data.get("take_profit")),
-            (data.get("note") or "").strip() or None,
-            now,
-            now,
-        ),
+    return db.position_create(
+        {
+            "symbol": symbol,
+            "quantity": quantity,
+            "avg_cost": avg_cost,
+            "buy_date": data.get("buy_date") or db.today_str(),
+            "stop_loss": _num(data.get("stop_loss")),
+            "take_profit": _num(data.get("take_profit")),
+            "note": (data.get("note") or "").strip() or None,
+            "status": "OPEN",
+            "created_at": now,
+            "updated_at": now,
+        }
     )
 
 
 def update_position(position_id: int, data: dict) -> None:
-    row = db.query_one("SELECT * FROM positions WHERE id = ?", (position_id,))
+    row = db.position_latest(position_id)
     if not row:
         raise ValueError("Không tìm thấy vị thế")
-    db.execute(
-        "UPDATE positions SET quantity = ?, avg_cost = ?, stop_loss = ?, take_profit = ?, note = ?, status = ?, updated_at = ? WHERE id = ?",
-        (
-            int(_num(data.get("quantity", row["quantity"])) or row["quantity"]),
-            _num(data.get("avg_cost", row["avg_cost"])) or row["avg_cost"],
-            _num(data.get("stop_loss", row["stop_loss"])),
-            _num(data.get("take_profit", row["take_profit"])),
-            (data.get("note", row["note"]) or None),
-            data.get("status", row["status"] or "OPEN"),
-            db.now_str(),
-            position_id,
-        ),
+    db.position_put(
+        position_id,
+        {
+            "quantity": int(_num(data.get("quantity", row["quantity"])) or row["quantity"]),
+            "avg_cost": _num(data.get("avg_cost", row["avg_cost"])) or row["avg_cost"],
+            "stop_loss": _num(data.get("stop_loss", row["stop_loss"])),
+            "take_profit": _num(data.get("take_profit", row["take_profit"])),
+            "note": (data.get("note", row["note"]) or None),
+            "status": data.get("status", row["status"] or "OPEN"),
+        },
     )
 
 
 def delete_position(position_id: int) -> None:
-    db.execute("DELETE FROM positions WHERE id = ?", (position_id,))
+    db.position_delete(position_id)
 
 
 # ------------------------------------------------------------- watchlist
 
 def watchlist_rows() -> list[dict]:
-    rows = db.query("SELECT * FROM watchlist ORDER BY id DESC")
+    rows = db.watchlist_all()
     out: list[dict] = []
     for row in rows:
         payload = _analyze(row["symbol"])
@@ -153,27 +150,21 @@ def add_watch(data: dict) -> int:
     symbol = str(data.get("symbol") or "").strip().upper()
     if not symbol:
         raise ValueError("Thiếu mã cổ phiếu")
-    return db.execute(
-        "INSERT INTO watchlist(symbol, note, target_price, created_at) VALUES(?, ?, ?, ?) "
-        "ON CONFLICT(symbol) DO UPDATE SET note = excluded.note, target_price = excluded.target_price",
-        (symbol, (data.get("note") or "").strip() or None, _num(data.get("target_price")), db.now_str()),
+    return db.watch_add(
+        symbol,
+        (data.get("note") or "").strip() or None,
+        _num(data.get("target_price")),
     )
 
 
 def remove_watch(watch_id: int) -> None:
-    db.execute("DELETE FROM watchlist WHERE id = ?", (watch_id,))
+    db.watch_remove(watch_id)
 
 
 # ----------------------------------------------------------------- alerts
 
 def _upsert_alert(symbol: str, alert_type: str, severity: str, message: str, price: float | None) -> None:
-    db.execute(
-        "INSERT INTO alerts(symbol, type, severity, message, price, day, created_at, acknowledged) "
-        "VALUES(?, ?, ?, ?, ?, ?, ?, 0) "
-        "ON CONFLICT(symbol, type, day) DO UPDATE SET message = excluded.message, "
-        "severity = excluded.severity, price = excluded.price, created_at = excluded.created_at",
-        (symbol, alert_type, severity, message, price, db.today_str(), db.now_str()),
-    )
+    db.alert_upsert(symbol, alert_type, severity, message, price)
 
 
 def scan_alerts(force: bool = False) -> dict:
@@ -192,7 +183,7 @@ def scan_alerts(force: bool = False) -> dict:
     created = 0
     scanned = 0
 
-    for row in db.query("SELECT * FROM positions WHERE status = 'OPEN'"):
+    for row in db.positions_open():
         symbol = row["symbol"]
         payload = _analyze(symbol)
         scanned += 1
@@ -247,7 +238,7 @@ def scan_alerts(force: bool = False) -> dict:
                               price)
                 created += 1
 
-    for row in db.query("SELECT * FROM watchlist"):
+    for row in db.watchlist_all():
         symbol = row["symbol"]
         payload = _analyze(symbol)
         scanned += 1
@@ -289,21 +280,16 @@ def fmt_zone(zone: list | None) -> str:
 
 
 def alerts_list(limit: int = 100, include_ack: bool = False) -> list[dict]:
-    where = "" if include_ack else "WHERE acknowledged = 0"
-    return db.query(
-        f"SELECT * FROM alerts {where} ORDER BY created_at DESC LIMIT ?",
-        (limit,),
-    )
+    return db.alerts_list(limit=limit, include_ack=include_ack)
 
 
 def alerts_count() -> int:
-    row = db.query_one("SELECT COUNT(*) AS n FROM alerts WHERE acknowledged = 0")
-    return int(row["n"]) if row else 0
+    return db.alerts_count()
 
 
 def ack_alert(alert_id: int) -> None:
-    db.execute("UPDATE alerts SET acknowledged = 1 WHERE id = ?", (alert_id,))
+    db.alert_ack(alert_id)
 
 
 def ack_all() -> None:
-    db.execute("UPDATE alerts SET acknowledged = 1 WHERE acknowledged = 0")
+    db.alert_ack_all()

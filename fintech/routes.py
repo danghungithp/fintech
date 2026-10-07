@@ -63,7 +63,7 @@ def api_health():
             "app": "FinViet Pro",
             "time": db.now_str(),
             "serverless": ON_VERCEL,
-            "storage": "ephemeral" if ON_VERCEL else "local-sqlite",
+            "storage": "influxdb-cloud",
         }
     )
 

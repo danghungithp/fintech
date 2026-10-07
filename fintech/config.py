@@ -4,25 +4,35 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Vercel (serverless) detection: the filesystem is read-only except /tmp,
-# which is ephemeral per instance. Override with FINTECH_DATA_DIR when a
-# persistent volume is available (VPS, Render, Railway...).
+# Vercel (serverless) detection — kept for diagnostics and /api/health reporting.
 ON_VERCEL = bool(os.environ.get("VERCEL"))
-_data_override = os.environ.get("FINTECH_DATA_DIR")
-if _data_override:
-    DATA_DIR = Path(_data_override)
-elif ON_VERCEL:
-    DATA_DIR = Path("/tmp/finviet-pro")
-else:
-    DATA_DIR = BASE_DIR / "data"
 
-try:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-except OSError:
-    # Read-only filesystem (misconfigured serverless) — DB path may still be writable
-    pass
 
-DB_PATH = str(DATA_DIR / "fintech.db")
+def _load_dotenv(path: Path) -> None:
+    """Minimal .env loader (no external dependency). Existing env vars win."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_dotenv(BASE_DIR / ".env")
+
+# ---------------------------------------------------- InfluxDB 3 (database)
+# All application data is stored in InfluxDB Cloud Serverless. Configure via
+# environment variables or a local .env file (see .env.example). On Vercel,
+# add INFLUXDB_TOKEN (and optionally HOST/ORG/BUCKET) under
+# Project → Settings → Environment Variables.
+INFLUX_HOST = os.environ.get("INFLUXDB_HOST", "https://us-east-1-1.aws.cloud2.influxdata.com")
+INFLUX_ORG = os.environ.get("INFLUXDB_ORG", "mcpsoftware")
+INFLUX_TOKEN = os.environ.get("INFLUXDB_TOKEN", "")
+INFLUX_BUCKET = os.environ.get("INFLUXDB_BUCKET", "fintech")
 
 HOST = os.environ.get("FINTECH_HOST", "127.0.0.1")
 PORT = int(os.environ.get("FINTECH_PORT", "5000"))
@@ -40,7 +50,7 @@ SIGNAL_BUY = 30
 SIGNAL_SELL = -30
 SIGNAL_STRONG_SELL = -62
 
-# Default user settings stored in SQLite (key/value)
+# Default user settings stored in InfluxDB (measurement settings, key/value)
 DEFAULT_SETTINGS = {
     "equity": 500000000.0,          # VND, tong von dau tu
     "risk_pct": 2.0,                # % von cho moi lenh (risk-based sizing)

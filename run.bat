@@ -11,9 +11,9 @@ if errorlevel 1 (
 )
 
 echo Dang kiem tra thu vien...
-python -c "import flask" >nul 2>nul
+python -c "import flask, influxdb_client_3" >nul 2>nul
 if errorlevel 1 (
-  echo Dang cai dat Flask...
+  echo Dang cai dat thu vien (Flask + InfluxDB)...
   python -m pip install -r requirements.txt
 )
 

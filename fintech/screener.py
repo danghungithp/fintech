@@ -1,5 +1,5 @@
 """Stock screener: background scans over a Vietcap universe with signal and
-dividend-yield filters, with progress tracking stored in SQLite."""
+dividend-yield filters, with progress tracking stored in InfluxDB."""
 from __future__ import annotations
 
 import io
@@ -37,11 +37,7 @@ def resolve_universe(universe: dict) -> list[str]:
         symbols = vietcap.fetch_vietcap_group(str(value or "VN30"))
     elif kind == "exchange":
         exchange = str(value or "HOSE").strip().upper()
-        rows = db.query(
-            "SELECT symbol FROM symbols WHERE exchange = ? AND (type = 'STOCK' OR type = '') ORDER BY symbol",
-            (exchange,),
-        )
-        symbols = [r["symbol"] for r in rows]
+        symbols = db.symbols_by_exchange(exchange)
     elif kind == "custom":
         raw = value if isinstance(value, list) else str(value or "").replace(";", ",").split(",")
         symbols = [str(s).strip().upper() for s in raw if str(s).strip()]
@@ -132,23 +128,18 @@ def _execute(run_id: int, universe: dict, criteria: dict) -> None:
         symbols = symbols[:max_symbols]
         min_div = _num(criteria.get("min_dividend_yield"))
         need_dividend = bool(min_div and min_div > 0)
-        db.execute("UPDATE screen_runs SET total = ? WHERE id = ?", (len(symbols), run_id))
+        db.screen_run_update(run_id, {"total": len(symbols)})
 
         processed = 0
         failed = 0
         matched = 0
-        batch: list[tuple] = []
+        batch: list[dict] = []
 
         def flush():
             nonlocal batch
             if not batch:
                 return
-            db.executemany(
-                "INSERT INTO screen_results(run_id, symbol, signal, score, price, change_pct, dividend_yield, "
-                "rsi, avg_volume, buy_zone_low, buy_zone_high, stop_loss, target1, risk_reward, extra) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                batch,
-            )
+            db.screen_results_save(batch)
             batch = []
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
@@ -163,22 +154,22 @@ def _execute(run_id: int, universe: dict, criteria: dict) -> None:
                     if _passes(row, criteria):
                         matched += 1
                         batch.append(
-                            (
-                                run_id,
-                                row["symbol"],
-                                row["signal"],
-                                row["score"],
-                                row["price"],
-                                row["change_pct"],
-                                row["dividend_yield"],
-                                row["rsi"],
-                                row["avg_volume"],
-                                row["buy_zone_low"],
-                                row["buy_zone_high"],
-                                row["stop_loss"],
-                                row["target1"],
-                                row["risk_reward"],
-                                json.dumps(
+                            {
+                                "run_id": run_id,
+                                "symbol": row["symbol"],
+                                "signal": row["signal"],
+                                "score": row["score"],
+                                "price": row["price"],
+                                "change_pct": row["change_pct"],
+                                "dividend_yield": row["dividend_yield"],
+                                "rsi": row["rsi"],
+                                "avg_volume": row["avg_volume"],
+                                "buy_zone_low": row["buy_zone_low"],
+                                "buy_zone_high": row["buy_zone_high"],
+                                "stop_loss": row["stop_loss"],
+                                "target1": row["target1"],
+                                "risk_reward": row["risk_reward"],
+                                "extra": json.dumps(
                                     {
                                         "label": row["signal_label"],
                                         "reasons": row["reasons"],
@@ -187,24 +178,26 @@ def _execute(run_id: int, universe: dict, criteria: dict) -> None:
                                     },
                                     ensure_ascii=False,
                                 ),
-                            )
+                            }
                         )
                 if processed % 5 == 0 or processed == len(symbols):
                     flush()
-                    db.execute(
-                        "UPDATE screen_runs SET processed = ?, failed = ? WHERE id = ?",
-                        (processed, failed, run_id),
-                    )
+                    db.screen_run_update(run_id, {"processed": processed, "failed": failed})
         flush()
-        db.execute(
-            "UPDATE screen_runs SET status = 'DONE', processed = ?, failed = ?, finished_at = ? WHERE id = ?",
-            (processed, failed, db.now_str(), run_id),
+        db.screen_run_update(
+            run_id,
+            {
+                "status": "DONE",
+                "processed": processed,
+                "failed": failed,
+                "finished_at": db.now_str(),
+            },
         )
         db.set_setting("last_screen_matched", matched)
     except Exception as exc:  # noqa: BLE001 - record failure for the UI
-        db.execute(
-            "UPDATE screen_runs SET status = 'ERROR', error = ?, finished_at = ? WHERE id = ?",
-            (str(exc), db.now_str(), run_id),
+        db.screen_run_update(
+            run_id,
+            {"status": "ERROR", "error": str(exc), "finished_at": db.now_str()},
         )
     finally:
         with _lock:
@@ -216,9 +209,7 @@ def _reconcile_stale_runs() -> None:
 
     Called while holding _lock, only when no run is active in this process.
     """
-    row = db.query_one(
-        "SELECT id, created_at FROM screen_runs WHERE status = 'RUNNING' ORDER BY id DESC LIMIT 1"
-    )
+    row = db.screen_run_latest_running()
     if not row:
         return
     try:
@@ -228,10 +219,13 @@ def _reconcile_stale_runs() -> None:
         age_minutes = STALE_RUN_MINUTES + 1
     if age_minutes < STALE_RUN_MINUTES:
         raise ValueError("Đang có phiên sàng lọc chạy — vui lòng đợi hoàn tất")
-    db.execute(
-        "UPDATE screen_runs SET status = 'ERROR', error = ?, finished_at = ? WHERE id = ?",
-        ("Phiên sàng lọc bị gián đoạn (server khởi động lại hoặc hết thời gian xử lý).",
-         db.now_str(), row["id"]),
+    db.screen_run_update(
+        row["id"],
+        {
+            "status": "ERROR",
+            "error": "Phiên sàng lọc bị gián đoạn (server khởi động lại hoặc hết thời gian xử lý).",
+            "finished_at": db.now_str(),
+        },
     )
 
 
@@ -242,9 +236,9 @@ def start_run(payload: dict) -> dict:
         if _current["run_id"] is not None:
             raise ValueError("Đang có phiên sàng lọc chạy — vui lòng đợi hoàn tất")
         _reconcile_stale_runs()
-        run_id = db.execute(
-            "INSERT INTO screen_runs(created_at, status, universe, criteria) VALUES(?, 'RUNNING', ?, ?)",
-            (db.now_str(), json.dumps(universe, ensure_ascii=False), json.dumps(criteria, ensure_ascii=False)),
+        run_id = db.screen_run_create(
+            json.dumps(universe, ensure_ascii=False),
+            json.dumps(criteria, ensure_ascii=False),
         )
         _current["run_id"] = run_id
     threading.Thread(target=_execute, args=(run_id, universe, criteria), daemon=True).start()
@@ -252,7 +246,7 @@ def start_run(payload: dict) -> dict:
 
 
 def run_status(run_id: int) -> dict:
-    row = db.query_one("SELECT * FROM screen_runs WHERE id = ?", (run_id,))
+    row = db.screen_run_latest(run_id)
     if not row:
         raise ValueError("Không tìm thấy phiên sàng lọc")
     total = row["total"] or 0
@@ -262,10 +256,7 @@ def run_status(run_id: int) -> dict:
 
 
 def run_results(run_id: int) -> list[dict]:
-    rows = db.query(
-        "SELECT * FROM screen_results WHERE run_id = ? ORDER BY score DESC, dividend_yield DESC",
-        (run_id,),
-    )
+    rows = db.screen_results_for_run(run_id)
     for row in rows:
         try:
             extra = json.loads(row.get("extra") or "{}")
@@ -278,15 +269,21 @@ def run_results(run_id: int) -> list[dict]:
 
 
 def recent_runs(limit: int = 12) -> list[dict]:
-    rows = db.query("SELECT * FROM screen_runs ORDER BY id DESC LIMIT ?", (limit,))
-    for row in rows:
-        count = db.query_one("SELECT COUNT(*) AS n FROM screen_results WHERE run_id = ?", (row["id"],))
-        row["matched"] = int(count["n"]) if count else 0
+    ids = db.screen_run_ids(limit)
+    runs = db.screen_runs_latest(ids)
+    counts = db.screen_results_counts(ids)
+    rows: list[dict] = []
+    for run_id in sorted(ids, reverse=True):
+        row = runs.get(run_id)
+        if row is None:
+            continue
+        row["matched"] = counts.get(run_id, 0)
         try:
             row["universe"] = json.loads(row.get("universe") or "{}")
             row["criteria"] = json.loads(row.get("criteria") or "{}")
         except (TypeError, ValueError):
             row["universe"], row["criteria"] = {}, {}
+        rows.append(row)
     return rows
 
 
