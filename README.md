@@ -119,6 +119,7 @@ Dự án đã được đóng gói sẵn cho Vercel (serverless):
 - **`vercel.json`** — định tuyến mọi request vào hàm Flask (`rewrites`), cấu hình
   `maxDuration: 60s` và `includeFiles: fintech/**` để đóng gói templates/static.
 - **`.vercelignore`** — loại `data/`, `tools/`, bộ đệm khỏi bundle.
+- **`.python-version`** — chốt Python **3.12** cho Vercel (phiên bản mặc định của `@vercel/python`).
 - **`fintech/config.py`** — tự nhận diện `VERCEL=1`: chuyển SQLite sang `/tmp/finviet-pro`
   (vì hệ thống tệp trên Vercel chỉ ghi được ở `/tmp`).
 
