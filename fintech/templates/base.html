@@ -3,7 +3,51 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}FinViet Pro{% endblock %} · FinViet Pro</title>
+  <title>{% block title %}Phân tích cổ phiếu và đầu tư chứng khoán Việt Nam{% endblock %} · FinViet Pro</title>
+  <meta name="description" content="{% block description %}FinViet Pro - công cụ phân tích chứng khoán Việt Nam miễn phí: tín hiệu mua bán cổ phiếu, phân tích kỹ thuật với Fibonacci, Pivot Point, hỗ trợ/kháng cự, RSI, MACD, sàng lọc cổ phiếu theo cổ tức, quản lý danh mục đầu tư và cảnh báo cắt lỗ tự động.{% endblock %}">
+  <meta name="keywords" content="{% block keywords %}phân tích chứng khoán, đầu tư chứng khoán, phân tích cổ phiếu, phân tích kỹ thuật chứng khoán, tín hiệu mua bán cổ phiếu, cổ phiếu Việt Nam, VN-Index, VN30, sàng lọc cổ phiếu, cổ tức, điểm mua cổ phiếu, vùng mua cổ phiếu, cắt lỗ, chốt lời, Fibonacci, Pivot Point, hỗ trợ kháng cự, RSI, MACD, quản lý danh mục đầu tư, quản trị vốn Kelly, cảnh báo chứng khoán, giá cổ phiếu hôm nay{% endblock %}">
+  <meta name="robots" content="{% block robots %}index, follow, max-image-preview:large, max-snippet:-1{% endblock %}">
+  <meta name="author" content="FinViet Pro">
+  <meta name="theme-color" content="#0b1220">
+  <link rel="canonical" href="{{ site_url }}{{ request.path }}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="FinViet Pro">
+  <meta property="og:locale" content="vi_VN">
+  <meta property="og:title" content="{{ self.title() }} · FinViet Pro">
+  <meta property="og:description" content="{{ self.description() }}">
+  <meta property="og:url" content="{{ site_url }}{{ request.path }}">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="{{ self.title() }} · FinViet Pro">
+  <meta name="twitter:description" content="{{ self.description() }}">
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "name": "FinViet Pro",
+          "alternateName": "FinViet Pro - Phân tích đầu tư chứng khoán Việt Nam",
+          "url": "{{ site_url }}",
+          "inLanguage": "vi-VN",
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": "{{ site_url }}/phan-tich?symbol={search_term_string}",
+            "query-input": "required name=search_term_string"
+          }
+        },
+        {
+          "@type": "WebApplication",
+          "name": "FinViet Pro",
+          "url": "{{ site_url }}",
+          "applicationCategory": "FinanceApplication",
+          "operatingSystem": "Web",
+          "inLanguage": "vi-VN",
+          "offers": {"@type": "Offer", "price": "0", "priceCurrency": "VND"},
+          "description": "Công cụ phân tích cổ phiếu và đầu tư chứng khoán Việt Nam miễn phí: tín hiệu mua bán, phân tích kỹ thuật, sàng lọc cổ phiếu, quản lý danh mục đầu tư và cảnh báo tự động."
+        }
+      ]
+    }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -86,6 +130,8 @@
       <footer class="footer">
         FinViet Pro · Dữ liệu từ Vietcap (EOD) · Chỉ mang tính tham khảo, không phải khuyến nghị đầu tư.
         Quản trị vốn theo công thức Kelly 1/2 của Edward Thorp.
+        Phân tích cổ phiếu Việt Nam: tín hiệu mua bán, Fibonacci, hỗ trợ kháng cự,
+        sàng lọc cổ phiếu theo cổ tức và cảnh báo cắt lỗ tự động cho HOSE, HNX, UPCOM.
       </footer>
     </div>
   </div>

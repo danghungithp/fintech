@@ -143,6 +143,7 @@ Vào **Project → Settings → Environment Variables**, thêm (cho cả Product
 | `INFLUXDB_HOST` | `https://us-east-1-1.aws.cloud2.influxdata.com` (mặc định, có thể bỏ qua) |
 | `INFLUXDB_ORG` | `mcpsoftware` (mặc định, có thể bỏ qua) |
 | `INFLUXDB_BUCKET` | `fintech` (mặc định, có thể bỏ qua) |
+| `SITE_URL` | URL công khai dùng cho SEO (canonical, sitemap). Mặc định `https://fintech-52jk.vercel.app`; đặt khi gắn domain riêng |
 
 Sau khi thêm biến, bấm **Redeploy** để áp dụng.
 

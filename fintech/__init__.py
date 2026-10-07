@@ -2,6 +2,7 @@
 from flask import Flask
 
 from . import db, routes
+from .config import SITE_URL
 
 
 def create_app() -> Flask:
@@ -11,6 +12,11 @@ def create_app() -> Flask:
 
     db.init_db()
     app.register_blueprint(routes.bp)
+
+    @app.context_processor
+    def inject_seo_context():
+        # Site URL for canonical links, Open Graph and JSON-LD in templates.
+        return {"site_url": SITE_URL}
 
     @app.after_request
     def add_cache_headers(response):

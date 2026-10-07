@@ -5,7 +5,7 @@ from flask import Blueprint, Response, jsonify, render_template, request
 
 from . import analysis as analysis_engine
 from . import db, kelly, market, portfolio, screener, vietcap
-from .config import INDEX_SYMBOLS, UNIVERSE_GROUPS, EXCHANGES, ON_VERCEL
+from .config import INDEX_SYMBOLS, UNIVERSE_GROUPS, EXCHANGES, ON_VERCEL, SITE_URL
 
 bp = Blueprint("main", __name__)
 
@@ -51,6 +51,45 @@ def page_alerts():
 @bp.get("/cai-dat")
 def page_settings():
     return render_template("settings.html", active="settings")
+
+
+@bp.get("/robots.txt")
+def robots_txt():
+    body = "\n".join(
+        [
+            "User-agent: *",
+            "Allow: /",
+            "Disallow: /api/",
+            "",
+            f"Sitemap: {SITE_URL}/sitemap.xml",
+            "",
+        ]
+    )
+    return Response(body, mimetype="text/plain")
+
+
+@bp.get("/sitemap.xml")
+def sitemap_xml():
+    today = db.now_str()[:10]
+    # (path, priority, changefreq) — settings page is intentionally excluded (noindex).
+    urls = [
+        ("/", "1.0", "daily"),
+        ("/phan-tich", "0.9", "daily"),
+        ("/sang-loc", "0.8", "weekly"),
+        ("/canh-bao", "0.6", "daily"),
+        ("/danh-muc", "0.5", "weekly"),
+    ]
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
+    for path, priority, changefreq in urls:
+        lines.append(
+            f"  <url><loc>{SITE_URL}{path}</loc><lastmod>{today}</lastmod>"
+            f"<changefreq>{changefreq}</changefreq><priority>{priority}</priority></url>"
+        )
+    lines.append("</urlset>")
+    return Response("\n".join(lines), mimetype="application/xml")
 
 
 # --------------------------------------------------------------------- api

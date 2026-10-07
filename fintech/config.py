@@ -38,6 +38,10 @@ HOST = os.environ.get("FINTECH_HOST", "127.0.0.1")
 PORT = int(os.environ.get("FINTECH_PORT", "5000"))
 DEBUG = os.environ.get("FINTECH_DEBUG", "0") == "1"
 
+# Public site URL used for SEO (canonical link, Open Graph, sitemap.xml).
+# Override with the SITE_URL env var when a custom domain is attached.
+SITE_URL = os.environ.get("SITE_URL", "https://fintech-52jk.vercel.app").rstrip("/")
+
 # Data cache
 DEFAULT_HISTORY_DAYS = 400
 CACHE_HOURS = 6
