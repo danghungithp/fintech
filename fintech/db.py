@@ -219,6 +219,18 @@ def _touch_active_rows() -> None:
         fields = _drop_keys(row, ("time", "id"))
         points.append(_point("analyses", {"id": row.get("id")}, fields, ts=now))
 
+    for row in _latest(_fetch("SELECT * FROM users"), lambda r: r.get("id")):
+        if row.get("deleted"):
+            continue
+        fields = _drop_keys(row, ("time", "id"))
+        points.append(_point("users", {"id": row.get("id")}, fields, ts=now))
+
+    for row in _latest(_fetch("SELECT * FROM trades"), lambda r: r.get("id")):
+        if row.get("deleted"):
+            continue
+        fields = _drop_keys(row, ("time", "id"))
+        points.append(_point("trades", {"id": row.get("id")}, fields, ts=now))
+
     _write(points)
 
 
@@ -852,3 +864,192 @@ def alert_ack_all() -> None:
         tags = {key: row.get(key) for key in ("id", "symbol", "alert_type", "day")}
         points.append(_point("alerts", tags, fields))
     _write(points)
+
+
+# -------------------------------------------------------------------- users
+
+def user_create(email: str, password_hash: str, name: str = "", role: str = "user") -> int:
+    user_id = _new_id()
+    _write([_point(
+        "users",
+        {"id": str(user_id)},
+        {
+            "email": (email or "").strip().lower(),
+            "password_hash": password_hash,
+            "name": name or "",
+            "role": role or "user",
+            "active": 1,
+            "created_at": now_str(),
+            "updated_at": now_str(),
+        },
+    )])
+    return user_id
+
+
+def user_by_email(email: str) -> Optional[dict]:
+    email = (email or "").strip().lower()
+    if not email:
+        return None
+    rows = _fetch(
+        f"SELECT * FROM users WHERE email = {_sql_str(email)}"
+        " ORDER BY time DESC LIMIT 1"
+    )
+    if not rows or rows[0].get("deleted"):
+        return None
+    row = _public(rows[0])
+    row["id"] = _as_int(row.get("id"))
+    row["active"] = _as_int(row.get("active"), 1)
+    return row
+
+
+def user_latest(user_id: int) -> Optional[dict]:
+    rows = _fetch(
+        f"SELECT * FROM users WHERE id = {_sql_str(_as_int(user_id))}"
+        " ORDER BY time DESC LIMIT 1"
+    )
+    if not rows or rows[0].get("deleted"):
+        return None
+    row = _public(rows[0])
+    row["id"] = _as_int(row.get("id"))
+    row["active"] = _as_int(row.get("active"), 1)
+    return row
+
+
+def users_list() -> list[dict]:
+    out = []
+    for row in _latest(_fetch("SELECT * FROM users"), lambda r: r.get("id")):
+        if row.get("deleted"):
+            continue
+        out.append({
+            "id": _as_int(row.get("id")),
+            "email": row.get("email"),
+            "name": row.get("name"),
+            "role": row.get("role") or "user",
+            "active": _as_int(row.get("active"), 1),
+            "created_at": row.get("created_at"),
+        })
+    out.sort(key=lambda r: r.get("id") or 0, reverse=True)
+    return out
+
+
+def user_set_active(user_id: int, active: bool) -> None:
+    row = user_latest(user_id)
+    if row is None:
+        return
+    merged = {**row, "active": 1 if active else 0, "updated_at": now_str()}
+    merged.pop("id", None)
+    _write([_point("users", {"id": str(_as_int(user_id))}, merged)])
+
+
+# --------------------------------------------------- registration requests
+
+def registration_request_create(email: str, note: str) -> int:
+    request_id = _new_id()
+    _write([_point(
+        "registration_requests",
+        {"id": str(request_id)},
+        {
+            "email": (email or "").strip().lower(),
+            "note": note or "",
+            "status": "NEW",
+            "notified": 0,
+            "notify_method": "",
+            "created_at": now_str(),
+        },
+    )])
+    return request_id
+
+
+def registration_request_set_notified(request_id: int, method: str) -> None:
+    rows = _fetch(
+        f"SELECT * FROM registration_requests WHERE id = {_sql_str(_as_int(request_id))}"
+        " ORDER BY time DESC LIMIT 1"
+    )
+    if not rows:
+        return
+    fields = _drop_keys(rows[0], ("time", "id"))
+    fields["notified"] = 1
+    fields["notify_method"] = method or ""
+    _write([_point("registration_requests", {"id": rows[0].get("id")}, fields)])
+
+
+def registration_request_set_status(request_id: int, status: str) -> None:
+    rows = _fetch(
+        f"SELECT * FROM registration_requests WHERE id = {_sql_str(_as_int(request_id))}"
+        " ORDER BY time DESC LIMIT 1"
+    )
+    if not rows:
+        return
+    fields = _drop_keys(rows[0], ("time", "id"))
+    fields["status"] = status or "NEW"
+    _write([_point("registration_requests", {"id": rows[0].get("id")}, fields)])
+
+
+def registration_requests_list(limit: int = 50) -> list[dict]:
+    rows = _fetch(
+        f"SELECT * FROM registration_requests ORDER BY time DESC LIMIT {int(limit) * 4}"
+    )
+    out = []
+    for row in _latest(rows, lambda r: r.get("id")):
+        out.append({
+            "id": _as_int(row.get("id")),
+            "email": row.get("email"),
+            "note": row.get("note"),
+            "status": row.get("status") or "NEW",
+            "notified": _as_int(row.get("notified")),
+            "notify_method": row.get("notify_method"),
+            "created_at": row.get("created_at"),
+        })
+    out.sort(key=lambda r: (r.get("created_at") or "", r["id"]), reverse=True)
+    return out[:limit]
+
+
+# ------------------------------------------------------------------- trades
+
+def trade_create(fields: dict) -> int:
+    trade_id = _new_id()
+    _write([_point("trades", {"id": str(trade_id)}, fields)])
+    return trade_id
+
+
+def trade_latest(trade_id: int) -> Optional[dict]:
+    rows = _fetch(
+        f"SELECT * FROM trades WHERE id = {_sql_str(_as_int(trade_id))}"
+        " ORDER BY time DESC LIMIT 1"
+    )
+    if not rows or rows[0].get("deleted"):
+        return None
+    row = _public(rows[0])
+    row["id"] = _as_int(row.get("id"))
+    return row
+
+
+def trades_for(user_id: str, limit: int = 500) -> list[dict]:
+    rows = _fetch(f"SELECT * FROM trades WHERE user_id = {_sql_str(str(user_id))}")
+    out = []
+    for row in _latest(rows, lambda r: r.get("id")):
+        if row.get("deleted"):
+            continue
+        row = _public(row)
+        row["id"] = _as_int(row.get("id"))
+        out.append(row)
+    out.sort(key=lambda r: (r.get("trade_date") or "", r.get("id") or 0), reverse=True)
+    return out[:limit]
+
+
+def trade_delete(trade_id: int) -> None:
+    row = trade_latest(trade_id)
+    if row is None:
+        return
+    merged = {**row, "deleted": True}
+    merged.pop("id", None)
+    _write([_point("trades", {"id": str(_as_int(trade_id))}, merged)])
+
+
+def user_delete(user_id: int) -> None:
+    row = user_latest(user_id)
+    if row is None:
+        return
+    merged = {**row, "deleted": True, "updated_at": now_str()}
+    merged.pop("id", None)
+    _write([_point("users", {"id": str(_as_int(user_id))}, merged)])

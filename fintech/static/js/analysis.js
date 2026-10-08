@@ -30,6 +30,7 @@
       // creation time, and a display:none parent yields a 0px-high canvas.
       showState('analysis-view');
       renderAll(payload);
+      loadAdvanced(symbol, refresh);
       const url = new URL(window.location.href);
       url.searchParams.set('symbol', symbol);
       window.history.replaceState(null, '', url.toString());
@@ -285,6 +286,78 @@
       table.classList.remove('hidden');
     } else {
       table.classList.add('hidden');
+    }
+  }
+
+  /* ------------------------------------------- advanced (member-only) module */
+
+  const PATTERN_TONE = { 'Mua': 'tone-up', 'Bán': 'tone-down' };
+
+  function patternCard(pattern) {
+    const hit = ['Mua', 'Bán', 'Theo dõi'].includes(pattern.signal);
+    const badge = `<span class="badge ${PATTERN_TONE[pattern.signal] || 'tone-neutral'}">${fmt.escape(pattern.signal)}</span>`;
+    const message = pattern.message
+      ? `<div class="pattern-msg">${fmt.escape(pattern.message)}</div>` : '';
+    const details = [
+      pattern.neckline ? `Cổ: ${fmt.price(pattern.neckline)}` : '',
+      pattern.support ? `Đáy: ${fmt.price(pattern.support)}` : '',
+      pattern.volume_ratio ? `KL: ${pattern.volume_ratio}×` : '',
+    ].filter(Boolean).join(' · ');
+    return `<div class="pattern-item ${hit ? 'hit' : 'miss'}">
+      <div class="pattern-top"><strong>${fmt.escape(pattern.name)}</strong>${badge}</div>
+      ${details ? `<div class="pattern-msg tnum">${fmt.escape(details)}</div>` : ''}
+      ${message}
+    </div>`;
+  }
+
+  function renderAdvanced(adv) {
+    el('adv-updated').textContent = `Cập nhật: ${adv.updated_at || ''} · ${(adv.sessions || 0)} phiên`;
+    const biasEl = el('adv-bias');
+    biasEl.textContent = adv.bias_label || '—';
+    biasEl.className = 'chip ' + (adv.bias === 'Bullish' ? 'pos' : adv.bias === 'Bearish' ? 'neg' : '');
+    const trend = adv.trend || {};
+    const trendTone = trend.signal === 'Bullish' ? 'pos' : trend.signal === 'Bearish' ? 'neg' : '';
+    el('adv-trend').innerHTML = `Xu hướng: <span class="${trendTone}">${fmt.escape(trend.signal || '—')} (${trend.momentum != null ? (trend.momentum > 0 ? '+' : '') + trend.momentum + '%' : '—'})</span>`;
+    el('adv-summary').textContent = adv.summary || '';
+
+    const swing = adv.swing || {};
+    const swingRow = (p) => `<div class="swing-item"><span>${fmt.price(p.price)} đ</span><span class="muted">${fmt.escape(p.date || '')}</span></div>`;
+    el('adv-peaks').innerHTML = (swing.peaks || []).map(swingRow).join('') || '<p class="small muted">Chưa xác định</p>';
+    el('adv-troughs').innerHTML = (swing.troughs || []).map(swingRow).join('') || '<p class="small muted">Chưa xác định</p>';
+    el('adv-structure').textContent = swing.structure || '';
+
+    const candles = adv.candle_patterns || [];
+    el('adv-candle-count').textContent = `${candles.filter((c) => ['Mua', 'Bán', 'Theo dõi'].includes(c.signal)).length}/${candles.length} mẫu`;
+    el('adv-candles').innerHTML = candles.map(patternCard).join('') || '<p class="small muted">Không có dữ liệu nến</p>';
+
+    const charts = adv.chart_patterns || [];
+    el('adv-chart-count').textContent = `${charts.filter((c) => ['Mua', 'Bán', 'Theo dõi'].includes(c.signal)).length}/${charts.length} mẫu`;
+    el('adv-chart-patterns').innerHTML = charts.map(patternCard).join('') || '<p class="small muted">Không có dữ liệu mô hình</p>';
+  }
+
+  async function loadAdvanced(symbol, refresh) {
+    const section = el('advanced-section');
+    const lockBox = el('advanced-locked');
+    if (!section || !lockBox) return;
+    if (!loadAdvanced.lockHtml) loadAdvanced.lockHtml = lockBox.innerHTML;
+    section.classList.remove('hidden');
+    lockBox.innerHTML = loadAdvanced.lockHtml;
+    try {
+      const adv = await fetchJSON(`/api/analysis/advanced?symbol=${encodeURIComponent(symbol)}${refresh ? '&refresh=1' : ''}`);
+      lockBox.classList.add('hidden');
+      el('advanced-view').classList.remove('hidden');
+      renderAdvanced(adv);
+    } catch (err) {
+      lockBox.classList.remove('hidden');
+      el('advanced-view').classList.add('hidden');
+      const msg = (err && err.message) || 'Không tải được phân tích chuyên sâu.';
+      if (!msg.includes('đăng nhập')) {
+        lockBox.innerHTML = `<strong>🔒 Phân tích chuyên sâu</strong>${fmt.escape(msg)}
+          <div class="flex mt-12" style="gap:8px;justify-content:center;">
+            <a class="btn btn-primary" href="/dang-nhap">Đăng nhập</a>
+            <a class="btn btn-ghost" href="/dang-ky">Đăng ký bằng email</a>
+          </div>`;
+      }
     }
   }
 

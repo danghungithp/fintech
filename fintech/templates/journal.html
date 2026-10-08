@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Sổ giao dịch cá nhân{% endblock %}
+{% block description %}Sổ giao dịch chứng khoán cá nhân: ghi nhận lệnh mua bán, tự động tính lãi/lỗ thực hiện theo FIFO, tỷ lệ thắng và vị thế đang nắm giữ.{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block header_title %}Sổ giao dịch{% endblock %}
+
+{% block content %}
+<div id="journal-locked" class="card empty-state">
+  <strong>🔒 Sổ giao dịch dành cho thành viên</strong>
+  Đăng nhập để ghi nhận lệnh mua/bán, theo dõi lãi/lỗ thực hiện (FIFO),
+  tỷ lệ thắng và các vị thế đang nắm giữ.
+  <div class="flex mt-12" style="gap:8px;justify-content:center;flex-wrap:wrap;">
+    <a class="btn btn-primary" href="/dang-nhap">Đăng nhập</a>
+    <a class="btn btn-ghost" href="/dang-ky">Đăng ký bằng email</a>
+  </div>
+</div>
+
+<div id="journal-app" class="hidden">
+  <div class="journal-summary" id="journal-summary"></div>
+
+  <section class="card" style="margin-top:16px;">
+    <div class="card-head" style="margin-bottom:10px;">
+      <h3>Thêm giao dịch</h3>
+      <span class="chip">Lãi/lỗ tự động theo FIFO</span>
+    </div>
+    <form class="journal-form" id="trade-form" autocomplete="off">
+      <label class="field">Ngày<input type="date" id="t-date" required></label>
+      <label class="field">Mã CK<input id="t-symbol" list="trade-symbol-suggest" placeholder="FPT" maxlength="10" required style="text-transform:uppercase;">
+        <datalist id="trade-symbol-suggest"></datalist>
+      </label>
+      <label class="field">Hướng
+        <select id="t-side">
+          <option value="BUY">Mua (BUY)</option>
+          <option value="SELL">Bán (SELL)</option>
+        </select>
+      </label>
+      <label class="field">Khối lượng (CP)<input type="number" id="t-qty" min="1" step="1" placeholder="1000" required></label>
+      <label class="field">Giá (đ)<input type="number" id="t-price" min="0.01" step="0.01" placeholder="25000" required></label>
+      <label class="field">Phí (đ)<input type="number" id="t-fee" min="0" step="100" placeholder="0"></label>
+      <label class="field journal-note">Ghi chú<input id="t-note" maxlength="200" placeholder="VD: mua tích lũy vùng hỗ trợ"></label>
+      <button class="btn btn-primary" type="submit" id="t-add">+ Thêm lệnh</button>
+    </form>
+  </section>
+
+  <section class="card" style="margin-top:16px;">
+    <div class="card-head" style="margin-bottom:10px;">
+      <h3>Lịch sử giao dịch</h3>
+      <span class="chip" id="journal-count">0 lệnh</span>
+    </div>
+    <div class="table-scroll">
+      <table class="data-table no-hover" id="journal-table"></table>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:16px;">
+    <div class="card-head" style="margin-bottom:10px;">
+      <h3>Vị thế đang nắm giữ</h3>
+      <span class="chip">Giá vốn bình quân gia tăng (FIFO)</span>
+    </div>
+    <div class="table-scroll">
+      <table class="data-table no-hover" id="positions-table"></table>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/journal.js') }}"></script>
+{% endblock %}

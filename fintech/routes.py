@@ -4,6 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, Response, jsonify, render_template, request
 
 from . import analysis as analysis_engine
+from . import auth, candlesticks, journal, mailer
 from . import db, kelly, market, portfolio, screener, vietcap
 from .config import INDEX_SYMBOLS, UNIVERSE_GROUPS, EXCHANGES, ON_VERCEL, SITE_URL
 
@@ -53,6 +54,26 @@ def page_settings():
     return render_template("settings.html", active="settings")
 
 
+@bp.get("/dang-nhap")
+def page_login():
+    return render_template("login.html", active="login")
+
+
+@bp.get("/dang-ky")
+def page_register():
+    return render_template("register.html", active="register")
+
+
+@bp.get("/so-giao-dich")
+def page_journal():
+    return render_template("journal.html", active="journal")
+
+
+@bp.get("/quan-tri")
+def page_admin():
+    return render_template("admin.html", active="admin")
+
+
 @bp.get("/robots.txt")
 def robots_txt():
     body = "\n".join(
@@ -60,6 +81,11 @@ def robots_txt():
             "User-agent: *",
             "Allow: /",
             "Disallow: /api/",
+            # Private / member-only pages stay out of search indexes.
+            "Disallow: /dang-nhap",
+            "Disallow: /dang-ky",
+            "Disallow: /so-giao-dich",
+            "Disallow: /quan-tri",
             "",
             f"Sitemap: {SITE_URL}/sitemap.xml",
             "",
@@ -434,3 +460,172 @@ def api_settings_post():
         db.set_setting(key, value)
         updated[key] = value
     return jsonify({"ok": True, "updated": updated, "settings": db.get_settings()})
+
+
+# ------------------------------------------------------------------- auth
+
+@bp.get("/api/auth/me")
+def api_auth_me():
+    return jsonify({"user": auth.current_user(), "admin": auth.is_admin()})
+
+
+@bp.post("/api/auth/login")
+def api_auth_login():
+    body = request.get_json(silent=True) or {}
+    user = auth.authenticate(str(body.get("email") or ""), str(body.get("password") or ""))
+    if user is None:
+        return api_error("Email hoặc mật khẩu không đúng, hoặc tài khoản chưa được kích hoạt", 401)
+    auth.login_user(user)
+    return jsonify({"ok": True, "user": auth.current_user()})
+
+
+@bp.post("/api/auth/logout")
+def api_auth_logout():
+    auth.logout_user()
+    return jsonify({"ok": True})
+
+
+@bp.post("/api/register-request")
+def api_register_request():
+    """Visitor asks for an account: store the request + notify the admin mailbox."""
+    body = request.get_json(silent=True) or {}
+    email = str(body.get("email") or "").strip()
+    note = str(body.get("note") or "").strip()
+    local, _, domain = email.partition("@")
+    if not local or not domain or "." not in domain or " " in email or len(email) > 120:
+        return api_error("Email không hợp lệ")
+    try:
+        result = mailer.submit_registration_request(email, note)
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Không gửi được yêu cầu: {exc}", 500)
+    return jsonify(result)
+
+
+# ----------------------------------------------------- advanced analysis
+
+@bp.get("/api/analysis/advanced")
+@auth.login_required
+def api_analysis_advanced():
+    """Member-only module: trend momentum, đỉnh/đáy, nến đảo chiều, mô hình giá."""
+    symbol = (request.args.get("symbol") or "").strip().upper()
+    if not symbol:
+        return api_error("Thiếu tham số symbol")
+    settings = db.get_settings()
+    days = min(_int_arg("days", 400), 400)
+    try:
+        candles, _source = market.get_candles(
+            symbol, days=days,
+            cache_hours=float(settings.get("cache_hours") or 6),
+        )
+        if not candles:
+            return api_error(f"Không có dữ liệu giá cho {symbol}", 404)
+        return jsonify(candlesticks.analyze_advanced(symbol, candles))
+    except (ValueError, vietcap.VietcapError) as exc:
+        return api_error(str(exc), 400 if isinstance(exc, ValueError) else 502)
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Lỗi phân tích chuyên sâu: {exc}", 500)
+
+
+# ---------------------------------------------------------------- journal
+
+@bp.get("/api/trades")
+@auth.login_required
+def api_trades_list():
+    user = auth.current_user()
+    trades = journal.list_trades(user["id"])
+    return jsonify({"trades": trades, "summary": journal.summary(trades)})
+
+
+@bp.post("/api/trades")
+@auth.login_required
+def api_trades_create():
+    user = auth.current_user()
+    body = request.get_json(silent=True) or {}
+    try:
+        trade_id = journal.add_trade(user["id"], body)
+    except ValueError as exc:
+        return api_error(str(exc), 400)
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Không thêm được giao dịch: {exc}", 500)
+    return jsonify({"ok": True, "id": trade_id})
+
+
+@bp.delete("/api/trades/<int:trade_id>")
+@auth.login_required
+def api_trades_delete(trade_id: int):
+    user = auth.current_user()
+    if not journal.delete_trade(trade_id, user["id"]):
+        return api_error("Không tìm thấy giao dịch hoặc bạn không có quyền xóa", 404)
+    return jsonify({"ok": True})
+
+
+# ------------------------------------------------------------------ admin
+
+@bp.post("/api/admin/login")
+def api_admin_login():
+    body = request.get_json(silent=True) or {}
+    if not auth.check_admin_password(str(body.get("password") or "")):
+        return api_error("Mật khẩu quản trị không đúng", 401)
+    auth.login_admin()
+    return jsonify({"ok": True})
+
+
+@bp.post("/api/admin/logout")
+def api_admin_logout():
+    auth.logout_admin()
+    return jsonify({"ok": True})
+
+
+@bp.get("/api/admin/overview")
+@auth.admin_required
+def api_admin_overview():
+    return jsonify(
+        {
+            "users": db.users_list(),
+            "requests": db.registration_requests_list(limit=100),
+        }
+    )
+
+
+@bp.post("/api/admin/users")
+@auth.admin_required
+def api_admin_user_create():
+    body = request.get_json(silent=True) or {}
+    email = str(body.get("email") or "").strip().lower()
+    password = str(body.get("password") or "")
+    name = str(body.get("name") or "").strip()[:80]
+    local, _, domain = email.partition("@")
+    if not local or not domain or "." not in domain:
+        return api_error("Email không hợp lệ")
+    if len(password) < 6:
+        return api_error("Mật khẩu cần ít nhất 6 ký tự")
+    if db.user_by_email(email):
+        return api_error("Email đã tồn tại trong hệ thống", 409)
+    user_id = db.user_create(email, auth.hash_password(password), name or local, "user")
+    # Auto-approve any pending registration request with the same email.
+    for req in db.registration_requests_list(limit=100):
+        if (req.get("email") or "").strip().lower() == email and (req.get("status") or "NEW") == "NEW":
+            db.registration_request_set_status(req["id"], "APPROVED")
+    return jsonify({"ok": True, "id": user_id})
+
+
+@bp.post("/api/admin/users/<int:user_id>/active")
+@auth.admin_required
+def api_admin_user_active(user_id: int):
+    body = request.get_json(silent=True) or {}
+    if db.user_latest(user_id) is None:
+        return api_error("Không tìm thấy user", 404)
+    active = bool(body.get("active"))
+    db.user_set_active(user_id, active)
+    return jsonify({"ok": True, "active": active})
+
+
+@bp.post("/api/admin/requests/<int:request_id>/status")
+@auth.admin_required
+def api_admin_request_status(request_id: int):
+    body = request.get_json(silent=True) or {}
+    status = str(body.get("status") or "").upper()
+    if status not in {"APPROVED", "REJECTED"}:
+        return api_error("Trạng thái không hợp lệ (APPROVED hoặc REJECTED)")
+    db.registration_request_set_status(request_id, status)
+    return jsonify({"ok": True})

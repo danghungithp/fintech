@@ -127,6 +127,7 @@
     setupScanButton();
     refreshAlertCount();
     setInterval(refreshAlertCount, 60000);
+    refreshAuthArea();
   }
 
   function setupDatalists() {
@@ -170,6 +171,34 @@
         btn.textContent = 'Quét danh mục';
       }
     });
+  }
+
+  /* ---- auth chip (topbar): login/register when logged out, user + logout when in */
+  async function refreshAuthArea() {
+    const area = document.getElementById('auth-area');
+    if (!area) return;
+    let user = null;
+    try {
+      const data = await fetchJSON('/api/auth/me');
+      user = data && data.user;
+    } catch (e) { /* treat as logged out */ }
+    if (user) {
+      const name = user.name || user.email || 'Thành viên';
+      area.innerHTML = `
+        <a class="btn btn-ghost btn-sm" href="/so-giao-dich" title="Sổ giao dịch của bạn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" width="15" height="15"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>
+          ${fmt.escape(name)}
+        </a>
+        <button class="btn btn-ghost btn-sm" id="logout-btn" title="Đăng xuất">Thoát</button>`;
+      area.querySelector('#logout-btn').addEventListener('click', async () => {
+        try { await postJSON('/api/auth/logout', {}); } catch (e) { /* ignore */ }
+        window.location.href = '/';
+      });
+    } else {
+      area.innerHTML = `
+        <a class="btn btn-ghost btn-sm" href="/dang-nhap">Đăng nhập</a>
+        <a class="btn btn-primary btn-sm" href="/dang-ky">Đăng ký</a>`;
+    }
   }
 
   function modal(html) {

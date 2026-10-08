@@ -152,6 +152,65 @@
     </div>
   </aside>
 </div>
+
+<div id="advanced-section" class="hidden">
+  <div id="advanced-locked" class="card empty-state">
+    <strong>🔒 Phân tích chuyên sâu dành cho thành viên</strong>
+    Đăng nhập để xem phân tích <b>đỉnh – đáy – đảo chiều</b> theo mô hình nến Nhật
+    (Sao Mai, Sao Hoài, Búa, Bao phủ, Doji…), cấu trúc đỉnh/đáy gần nhất và các mô hình giá
+    (Cốc tay cầm, Hai đáy, Hai đỉnh, Vai đầu vai…).
+    <div class="flex mt-12" style="gap:8px;justify-content:center;flex-wrap:wrap;">
+      <a class="btn btn-primary" href="/dang-nhap">Đăng nhập</a>
+      <a class="btn btn-ghost" href="/dang-ky">Đăng ký bằng email</a>
+    </div>
+  </div>
+
+  <div id="advanced-view" class="hidden">
+    <div class="analysis-grid" style="margin-top:16px;">
+      <section class="card chart-card">
+        <header class="card-head">
+          <div class="sym-head">
+            <h2>Phân tích chuyên sâu</h2>
+            <span class="sub" id="adv-updated">—</span>
+          </div>
+          <div class="price-head">
+            <span class="chip" id="adv-bias">—</span>
+            <span class="chip" id="adv-trend">—</span>
+          </div>
+        </header>
+        <p class="sub" id="adv-summary" style="margin-bottom:14px;"></p>
+        <div class="grid grid-2">
+          <div>
+            <p class="small muted mb-8"><b>Đỉnh gần nhất (kháng cự swing)</b></p>
+            <div id="adv-peaks"></div>
+          </div>
+          <div>
+            <p class="small muted mb-8"><b>Đáy gần nhất (hỗ trợ swing)</b></p>
+            <div id="adv-troughs"></div>
+          </div>
+        </div>
+        <p class="hint mt-12" id="adv-structure"></p>
+      </section>
+
+      <aside class="side-col">
+        <div class="card">
+          <div class="card-head" style="margin-bottom:8px;">
+            <h3>Mô hình nến đảo chiều</h3>
+            <span class="chip" id="adv-candle-count">—</span>
+          </div>
+          <div class="pattern-list" id="adv-candles"></div>
+        </div>
+        <div class="card">
+          <div class="card-head" style="margin-bottom:8px;">
+            <h3>Mô hình giá (chart patterns)</h3>
+            <span class="chip" id="adv-chart-count">—</span>
+          </div>
+          <div class="pattern-list" id="adv-chart-patterns"></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}

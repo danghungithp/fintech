@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Đăng nhập tài khoản{% endblock %}
+{% block description %}Đăng nhập FinViet Pro để xem phân tích chuyên sâu: đỉnh, đáy, đảo chiều theo mô hình nến Nhật và sổ giao dịch cá nhân.{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block header_title %}Đăng nhập{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+  <section class="card auth-card">
+    <h2 style="margin-bottom:4px;">Đăng nhập FinViet Pro</h2>
+    <p class="sub" style="margin-bottom:16px;">Dành cho thành viên đã được quản trị viên tạo tài khoản.
+      Đăng nhập để xem <b>phân tích chuyên sâu</b> (đỉnh – đáy – đảo chiều theo mô hình nến) và <b>sổ giao dịch</b>.</p>
+
+    <form id="login-form" autocomplete="on">
+      <label class="field">Email
+        <input type="email" id="login-email" required placeholder="ban@email.com" autocomplete="email">
+      </label>
+      <label class="field">Mật khẩu
+        <input type="password" id="login-password" required placeholder="••••••••" autocomplete="current-password">
+      </label>
+      <button class="btn btn-primary" type="submit" id="login-btn" style="width:100%;margin-top:6px;">Đăng nhập</button>
+    </form>
+
+    <p class="hint mt-12">Chưa có tài khoản? Tài khoản được tạo thủ công sau khi quản trị viên duyệt yêu cầu —
+      <a href="/dang-ky">đăng ký bằng email tại đây</a>.</p>
+    <p class="hint"><a href="/">← Về trang tổng quan</a></p>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Quản trị tài khoản{% endblock %}
+{% block description %} Trang quản trị FinViet Pro: duyệt yêu cầu đăng ký, tạo tài khoản thành viên và quản lý trạng thái user.{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block header_title %}Quản trị{% endblock %}
+
+{% block content %}
+<div id="admin-gate" class="auth-wrap">
+  <section class="card auth-card">
+    <h2 style="margin-bottom:4px;">🔐 Đăng nhập quản trị</h2>
+    <p class="sub" style="margin-bottom:16px;">Nhập mật khẩu quản trị (biến môi trường <code>ADMIN_PASSWORD</code>)
+      để duyệt yêu cầu đăng ký và tạo tài khoản thành viên.</p>
+    <form id="admin-gate-form" autocomplete="off">
+      <label class="field">Mật khẩu quản trị
+        <input type="password" id="admin-password" required placeholder="••••••••" autocomplete="current-password">
+      </label>
+      <button class="btn btn-primary" type="submit" style="width:100%;margin-top:6px;">Vào trang quản trị</button>
+    </form>
+    <p class="hint mt-12"><a href="/">← Về trang tổng quan</a></p>
+  </section>
+</div>
+
+<div id="admin-app" class="hidden">
+  <div class="flex-between flex-wrap" style="margin-bottom:12px;">
+    <h2 style="margin:0;">Bảng điều khiển quản trị</h2>
+    <div class="flex" style="gap:8px;">
+      <button class="btn btn-ghost btn-sm" id="admin-refresh">↻ Làm mới</button>
+      <button class="btn btn-ghost btn-sm" id="admin-logout">Thoát quản trị</button>
+    </div>
+  </div>
+
+  <section class="card">
+    <div class="card-head" style="margin-bottom:10px;">
+      <h3>Yêu cầu đăng ký chờ duyệt</h3>
+      <span class="chip" id="admin-req-count">0</span>
+    </div>
+    <div class="table-scroll">
+      <table class="data-table no-hover" id="requests-table"></table>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:16px;">
+    <div class="card-head" style="margin-bottom:10px;"><h3>Tạo tài khoản thành viên</h3></div>
+    <form class="journal-form" id="user-form" autocomplete="off">
+      <label class="field">Email<input type="email" id="u-email" required placeholder="ban@email.com"></label>
+      <label class="field">Tên hiển thị<input id="u-name" maxlength="80" placeholder="VD: Minh Anh"></label>
+      <label class="field">Mật khẩu cấp sẵn<input id="u-pass" required minlength="6" placeholder="tối thiểu 6 ký tự"></label>
+      <button class="btn btn-primary" type="submit">+ Tạo tài khoản</button>
+    </form>
+    <p class="hint mt-8">Khi tạo tài khoản trùng email với một yêu cầu đang chờ, yêu cầu đó tự động chuyển sang trạng thái APPROVED.</p>
+  </section>
+
+  <section class="card" style="margin-top:16px;">
+    <div class="card-head" style="margin-bottom:10px;">
+      <h3>Danh sách thành viên</h3>
+      <span class="chip" id="admin-user-count">0</span>
+    </div>
+    <div class="table-scroll">
+      <table class="data-table no-hover" id="users-table"></table>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+{% endblock %}

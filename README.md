@@ -144,6 +144,10 @@ Vào **Project → Settings → Environment Variables**, thêm (cho cả Product
 | `INFLUXDB_ORG` | `mcpsoftware` (mặc định, có thể bỏ qua) |
 | `INFLUXDB_BUCKET` | `fintech` (mặc định, có thể bỏ qua) |
 | `SITE_URL` | URL công khai dùng cho SEO (canonical, sitemap). Mặc định `https://fintech-52jk.vercel.app`; đặt khi gắn domain riêng |
+| `SECRET_KEY` | Khóa ký cookie đăng nhập (**bắt buộc trên Vercel**) — tạo bằng `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `ADMIN_PASSWORD` | Mật khẩu trang quản trị `/quan-tri` (duyệt đăng ký, tạo user) |
+| `SMTP_USER` / `SMTP_PASS` | (Tùy chọn) Gmail app password để gửi email thông báo đăng ký tới quản trị viên |
+| `NOTIFY_EMAIL` | Email nhận thông báo đăng ký. Mặc định `mcpsoftware@gmail.com` |
 
 Sau khi thêm biến, bấm **Redeploy** để áp dụng.
 

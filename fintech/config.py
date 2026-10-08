@@ -42,6 +42,23 @@ DEBUG = os.environ.get("FINTECH_DEBUG", "0") == "1"
 # Override with the SITE_URL env var when a custom domain is attached.
 SITE_URL = os.environ.get("SITE_URL", "https://fintech-52jk.vercel.app").rstrip("/")
 
+# ------------------------------------------------- accounts & admin access
+# Signs the login session cookie. MUST be a stable random value on Vercel
+# (SECRET_KEY env var), otherwise sessions are dropped between invocations.
+# Locally a per-process random key is used when unset (dev convenience).
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
+
+# Password for the /quan-tri admin page (creates users, reviews requests).
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+# Registration-request notifications: SMTP (Gmail app password) when
+# SMTP_USER/SMTP_PASS are set, otherwise the FormSubmit relay is used.
+SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "465"))
+SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PASS = os.environ.get("SMTP_PASS", "")
+NOTIFY_EMAIL = os.environ.get("NOTIFY_EMAIL", "mcpsoftware@gmail.com")
+
 # Data cache
 DEFAULT_HISTORY_DAYS = 400
 CACHE_HOURS = 6

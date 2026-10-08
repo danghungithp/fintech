@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Đăng ký nhận tài khoản{% endblock %}
+{% block description %}Đăng ký nhận tài khoản FinViet Pro bằng email: quản trị viên sẽ xem xét và tạo tài khoản giúp bạn để truy cập phân tích chuyên sâu và sổ giao dịch.{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block header_title %}Đăng ký nhận tài khoản{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+  <section class="card auth-card">
+    <h2 style="margin-bottom:4px;">Đăng ký bằng email</h2>
+    <p class="sub" style="margin-bottom:16px;">Nhập email của bạn — hệ thống sẽ gửi thông báo tới quản trị viên.
+      Sau khi được duyệt, tài khoản (mật khẩu cấp sẵn) sẽ được gửi lại qua email này.</p>
+
+    <div id="register-form-wrap">
+      <form id="register-form" autocomplete="off">
+        <label class="field">Email của bạn
+          <input type="email" id="register-email" required placeholder="ban@email.com" autocomplete="email">
+        </label>
+        <label class="field">Ghi chú (không bắt buộc)
+          <textarea id="register-note" rows="3" maxlength="500" placeholder="VD: tôi đang đầu tư dài hạn HOSE, cần phân tích kỹ thuật..."></textarea>
+        </label>
+        <button class="btn btn-primary" type="submit" id="register-btn" style="width:100%;margin-top:6px;">Gửi yêu cầu đăng ký</button>
+      </form>
+    </div>
+
+    <div id="register-done" class="hidden">
+      <div class="warn-banner" style="margin-top:0;">✅<span><b>Đã nhận yêu cầu của bạn.</b> Quản trị viên sẽ xem xét và tạo tài khoản trong thời gian sớm nhất. Vui lòng kiểm tra lại email này sau.</span></div>
+    </div>
+
+    <p class="hint mt-12">Đã có tài khoản? <a href="/dang-nhap">Đăng nhập tại đây</a>.</p>
+    <p class="hint"><a href="/">← Về trang tổng quan</a></p>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+{% endblock %}
