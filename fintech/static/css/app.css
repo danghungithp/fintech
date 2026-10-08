@@ -494,6 +494,11 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 }
 .swing-item:last-child { border-bottom: none; }
 
+/* ----------------------------------------------------- mobile feature menu */
+.mobile-menu-btn { display: none; }
+.sidebar-close { display: none; }
+.sidebar-backdrop { display: none; }
+
 /* ------------------------------------------------------- responsive */
 @media (max-width: 1380px) {
   .analysis-grid { grid-template-columns: minmax(0, 1fr) 340px; }
@@ -507,7 +512,33 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .journal-form .journal-note { grid-column: span 2; }
 }
 @media (max-width: 860px) {
-  .sidebar { display: none; }
+  .sidebar {
+    display: flex;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 80;
+    width: 272px;
+    height: auto;
+    overflow-y: auto;
+    transform: translateX(-105%);
+    transition: transform 0.22s ease;
+    box-shadow: 0 0 44px rgba(2, 6, 16, 0.65);
+  }
+  .sidebar.open { transform: translateX(0); }
+  .mobile-menu-btn { display: inline-flex; align-items: center; justify-content: center; padding: 7px 9px; flex: 0 0 auto; }
+  .sidebar-close {
+    display: inline-flex; align-items: center; justify-content: center;
+    position: absolute; top: 12px; right: 10px; padding: 6px 8px;
+  }
+  .sidebar-backdrop {
+    display: block; position: fixed; inset: 0; z-index: 70;
+    background: rgba(3, 7, 16, 0.62);
+    backdrop-filter: blur(2px);
+  }
+  body.menu-open { overflow: hidden; }
+  .topbar { padding: 12px 14px; gap: 10px; }
   .content { padding: 16px; }
   .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
   .journal-form { grid-template-columns: 1fr; }

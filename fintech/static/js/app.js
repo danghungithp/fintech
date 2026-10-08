@@ -131,6 +131,28 @@
     wireLockLinks();
   }
 
+  /* ---- mobile feature menu: slide-in drawer on small screens */
+  function setupMobileMenu() {
+    const btn = document.getElementById('mobile-menu-btn');
+    const sidebar = document.getElementById('app-sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    if (!btn || !sidebar || !backdrop) return;
+    const closeBtn = document.getElementById('sidebar-close');
+
+    function setOpen(open) {
+      sidebar.classList.toggle('open', open);
+      backdrop.classList.toggle('hidden', !open);
+      document.body.classList.toggle('menu-open', open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    btn.addEventListener('click', () => setOpen(!sidebar.classList.contains('open')));
+    backdrop.addEventListener('click', () => setOpen(false));
+    if (closeBtn) closeBtn.addEventListener('click', () => setOpen(false));
+    sidebar.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => setOpen(false)));
+    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') setOpen(false); });
+  }
+
   function setupDatalists() {
     document.querySelectorAll('input[data-symbol-input]').forEach((input) => {
       const listId = input.getAttribute('list');
@@ -232,7 +254,10 @@
     if (root) root.innerHTML = '';
   }
 
-  document.addEventListener('DOMContentLoaded', setupGlobalSearch);
+  document.addEventListener('DOMContentLoaded', () => {
+    setupGlobalSearch();
+    setupMobileMenu();
+  });
 
   window.App = { fmt, fetchJSON, postJSON, toast, signalBadge, scoreBar, severityBadge, modal, closeModal, refreshAlertCount, getUser, wireLockLinks };
 })();
