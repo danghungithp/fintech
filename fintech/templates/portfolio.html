@@ -5,6 +5,17 @@
 {% block header_title %}Danh mục đầu tư{% endblock %}
 
 {% block content %}
+<div id="portfolio-locked" class="card empty-state">
+  <strong>🔒 Quản lý danh mục dành cho thành viên</strong>
+  Đăng nhập để theo dõi vị thế, giá vốn, lãi/lỗ từng mã, phân bổ tỷ trọng,
+  vùng mua bán đề xuất, cảnh báo tự động và quản trị vốn theo công thức Kelly 1/2.
+  <div class="flex mt-12" style="gap:8px;justify-content:center;flex-wrap:wrap;">
+    <a class="btn btn-primary lock-login" href="/dang-nhap">Đăng nhập</a>
+    <a class="btn btn-ghost" href="/dang-ky">Đăng ký bằng email</a>
+  </div>
+</div>
+
+<div id="portfolio-app" class="hidden">
 <div class="grid-stats">
   <div class="stat-card accent">
     <span class="label">Giá trị thị trường</span>
@@ -107,6 +118,7 @@
       </div>
     </section>
   </div>
+</div>
 </div>
 {% endblock %}
 

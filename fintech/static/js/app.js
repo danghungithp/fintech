@@ -128,6 +128,7 @@
     refreshAlertCount();
     setInterval(refreshAlertCount, 60000);
     refreshAuthArea();
+    wireLockLinks();
   }
 
   function setupDatalists() {
@@ -173,15 +174,32 @@
     });
   }
 
+  /* ---- auth helpers: cached current-user lookup for member-only features */
+  let userPromise = null;
+  function getUser(force = false) {
+    if (!userPromise || force) {
+      userPromise = fetchJSON('/api/auth/me')
+        .then((data) => (data && data.user) || null)
+        .catch(() => null);
+    }
+    return userPromise;
+  }
+
+  /* ---- member-only lock cards: add ?next= so visitors return here after login */
+  function wireLockLinks(next) {
+    const target = next || (window.location.pathname + window.location.search);
+    document.querySelectorAll('a.lock-login').forEach((a) => {
+      a.href = '/dang-nhap?next=' + encodeURIComponent(target);
+    });
+  }
+
   /* ---- auth chip (topbar): login/register when logged out, user + logout when in */
   async function refreshAuthArea() {
     const area = document.getElementById('auth-area');
+    const user = await getUser();
+    const scanBtn = document.getElementById('top-scan-btn');
+    if (scanBtn) scanBtn.classList.toggle('hidden', !user);
     if (!area) return;
-    let user = null;
-    try {
-      const data = await fetchJSON('/api/auth/me');
-      user = data && data.user;
-    } catch (e) { /* treat as logged out */ }
     if (user) {
       const name = user.name || user.email || 'Thành viên';
       area.innerHTML = `
@@ -216,5 +234,5 @@
 
   document.addEventListener('DOMContentLoaded', setupGlobalSearch);
 
-  window.App = { fmt, fetchJSON, postJSON, toast, signalBadge, scoreBar, severityBadge, modal, closeModal, refreshAlertCount };
+  window.App = { fmt, fetchJSON, postJSON, toast, signalBadge, scoreBar, severityBadge, modal, closeModal, refreshAlertCount, getUser, wireLockLinks };
 })();

@@ -26,6 +26,16 @@
   }
 
   async function loadPortfolio() {
+    const user = await App.getUser();
+    if (!user) {
+      el('stat-portfolio-value').textContent = '—';
+      const pnlEl = el('stat-portfolio-pnl');
+      pnlEl.textContent = 'Đăng nhập để xem danh mục của bạn';
+      pnlEl.className = 'delta tnum muted';
+      document.querySelector('#positions-table tbody').innerHTML =
+        '<tr class="no-hover"><td colspan="8" class="muted">🔒 Quản lý danh mục dành cho thành viên — <a href="/dang-nhap?next=%2Fdanh-muc">đăng nhập</a> để thêm vị thế và theo dõi lãi/lỗ.</td></tr>';
+      return;
+    }
     try {
       const data = await fetchJSON('/api/portfolio/overview');
       const s = data.summary || {};
@@ -113,6 +123,13 @@
   }
 
   async function loadTopSignals() {
+    const user = await App.getUser();
+    if (!user) {
+      el('topsignals-sub').textContent = 'Dành cho thành viên';
+      document.querySelector('#topsignals-table tbody').innerHTML =
+        '<tr class="no-hover"><td colspan="7" class="muted">🔒 Danh sách mã đạt tiêu chí dành cho thành viên — <a href="/dang-nhap?next=%2Fsang-loc">đăng nhập</a> để dùng sàng lọc cổ phiếu.</td></tr>';
+      return;
+    }
     try {
       const runs = await fetchJSON('/api/screener/runs?limit=1');
       const run = (runs.runs || [])[0];
@@ -143,6 +160,8 @@
   }
 
   async function autoScan() {
+    const user = await App.getUser();
+    if (!user) return;
     try {
       const res = await postJSON('/api/portfolio/scan', {});
       if (!res.skipped && res.created > 0) {

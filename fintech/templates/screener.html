@@ -5,6 +5,17 @@
 {% block header_title %}Sàng lọc cổ phiếu{% endblock %}
 
 {% block content %}
+<div id="screener-locked" class="card empty-state">
+  <strong>🔒 Sàng lọc cổ phiếu dành cho thành viên</strong>
+  Đăng nhập để quét cổ phiếu theo tín hiệu Fibonacci/Pivot, thanh khoản và tỷ suất cổ tức,
+  xem lịch sử các phiên sàng lọc và mở chi tiết phân tích cho từng mã trong kết quả.
+  <div class="flex mt-12" style="gap:8px;justify-content:center;flex-wrap:wrap;">
+    <a class="btn btn-primary lock-login" href="/dang-nhap">Đăng nhập</a>
+    <a class="btn btn-ghost" href="/dang-ky">Đăng ký bằng email</a>
+  </div>
+</div>
+
+<div id="screener-app" class="hidden">
 <section class="card">
   <div class="card-head">
     <div>
@@ -126,6 +137,7 @@
       <div class="loading-row"><span class="spinner"></span> Đang tải...</div>
     </div>
   </section>
+</div>
 </div>
 {% endblock %}
 

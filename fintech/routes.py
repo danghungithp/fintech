@@ -161,6 +161,7 @@ def api_index_summary():
 
 
 @bp.get("/api/analyze")
+@auth.login_required
 def api_analyze():
     symbol = (request.args.get("symbol") or "").strip().upper()
     if not symbol:
@@ -221,6 +222,7 @@ def api_dividends(symbol: str):
 
 
 @bp.post("/api/kelly/calc")
+@auth.login_required
 def api_kelly_calc():
     body = request.get_json(silent=True) or {}
     settings = db.get_settings()
@@ -264,11 +266,13 @@ def api_kelly_calc():
 # -------------------------------------------------------------- screener
 
 @bp.get("/api/screener/universes")
+@auth.login_required
 def api_screener_universes():
     return jsonify({"groups": UNIVERSE_GROUPS, "exchanges": EXCHANGES})
 
 
 @bp.post("/api/screener/run")
+@auth.login_required
 def api_screener_run():
     body = request.get_json(silent=True) or {}
     try:
@@ -283,11 +287,13 @@ def api_screener_run():
 
 
 @bp.get("/api/screener/runs")
+@auth.login_required
 def api_screener_runs():
     return jsonify({"runs": screener.recent_runs(limit=min(_int_arg("limit", 12), 40))})
 
 
 @bp.get("/api/screener/runs/<int:run_id>")
+@auth.login_required
 def api_screener_run_status(run_id: int):
     try:
         return jsonify(screener.run_status(run_id))
@@ -296,6 +302,7 @@ def api_screener_run_status(run_id: int):
 
 
 @bp.get("/api/screener/runs/<int:run_id>/results")
+@auth.login_required
 def api_screener_run_results(run_id: int):
     try:
         screener.run_status(run_id)  # 404 guard
@@ -305,6 +312,7 @@ def api_screener_run_results(run_id: int):
 
 
 @bp.get("/api/screener/runs/<int:run_id>/export")
+@auth.login_required
 def api_screener_export(run_id: int):
     try:
         screener.run_status(run_id)
@@ -321,6 +329,7 @@ def api_screener_export(run_id: int):
 # -------------------------------------------------------------- portfolio
 
 @bp.get("/api/portfolio/overview")
+@auth.login_required
 def api_portfolio_overview():
     try:
         positions = portfolio.positions_overview()
@@ -337,6 +346,7 @@ def api_portfolio_overview():
 
 
 @bp.post("/api/portfolio/positions")
+@auth.login_required
 def api_position_create():
     body = request.get_json(silent=True) or {}
     try:
@@ -349,6 +359,7 @@ def api_position_create():
 
 
 @bp.put("/api/portfolio/positions/<int:position_id>")
+@auth.login_required
 def api_position_update(position_id: int):
     body = request.get_json(silent=True) or {}
     try:
@@ -361,6 +372,7 @@ def api_position_update(position_id: int):
 
 
 @bp.delete("/api/portfolio/positions/<int:position_id>")
+@auth.login_required
 def api_position_delete(position_id: int):
     try:
         portfolio.delete_position(position_id)
@@ -370,6 +382,7 @@ def api_position_delete(position_id: int):
 
 
 @bp.post("/api/portfolio/watch")
+@auth.login_required
 def api_watch_add():
     body = request.get_json(silent=True) or {}
     try:
@@ -382,6 +395,7 @@ def api_watch_add():
 
 
 @bp.delete("/api/portfolio/watch/<int:watch_id>")
+@auth.login_required
 def api_watch_remove(watch_id: int):
     try:
         portfolio.remove_watch(watch_id)
@@ -391,6 +405,7 @@ def api_watch_remove(watch_id: int):
 
 
 @bp.post("/api/portfolio/scan")
+@auth.login_required
 def api_portfolio_scan():
     body = request.get_json(silent=True) or {}
     force = bool(body.get("force"))

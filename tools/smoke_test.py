@@ -1,17 +1,39 @@
 """End-to-end smoke test for FinViet Pro (run while the server is up).
 
 Usage: python tools/smoke_test.py [base_url]
+
+The screener, analysis and portfolio sections require a member session:
+the script first proves those APIs are locked for visitors, then bootstraps
+a temporary smoke-test account through the admin API (ADMIN_PASSWORD from the
+environment or .env), logs in with a cookie jar and runs the full flow.
 """
 from __future__ import annotations
 
+import http.cookiejar
 import json
+import os
 import sys
 import time
+from pathlib import Path
 from urllib.error import HTTPError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:5000"
 PASSED, FAILED = [], []
+
+# Load .env so ADMIN_PASSWORD / INFLUXDB_TOKEN are available for local runs.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+try:
+    from fintech import config as _config  # noqa: F401  (loads .env into os.environ)
+except Exception:  # noqa: BLE001 - remote runs may not need the app package
+    pass
+
+SMOKE_EMAIL = os.environ.get("SMOKE_EMAIL", "smoke.tester@finviet.local")
+SMOKE_PASSWORD = os.environ.get("SMOKE_PASSWORD", "Smoke-Test-2026!")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+JAR = http.cookiejar.CookieJar()
+OPENER = build_opener(HTTPCookieProcessor(JAR))
 
 
 def call(method: str, path: str, body: dict | None = None, raw: bool = False):
@@ -23,11 +45,17 @@ def call(method: str, path: str, body: dict | None = None, raw: bool = False):
         headers={"Content-Type": "application/json"} if data else {},
     )
     try:
-        with urlopen(req, timeout=90) as res:
+        with OPENER.open(req, timeout=90) as res:
             content = res.read().decode("utf-8", errors="replace")
             return res.status, content if raw else json.loads(content or "{}")
     except HTTPError as exc:
-        return exc.code, exc.read().decode("utf-8", errors="replace")
+        content = exc.read().decode("utf-8", errors="replace")
+        if raw:
+            return exc.code, content
+        try:
+            return exc.code, json.loads(content or "{}")
+        except json.JSONDecodeError:
+            return exc.code, content
 
 
 def check(name: str, ok: bool, detail: str = ""):
@@ -35,6 +63,74 @@ def check(name: str, ok: bool, detail: str = ""):
     line = f"[{tag}] {name}" + (f" — {detail}" if detail else "")
     print(line)
     (PASSED if ok else FAILED).append(name)
+
+
+def is_local() -> bool:
+    return "127.0.0.1" in BASE or "localhost" in BASE
+
+
+def local_delete_smoke_user() -> bool:
+    """Remove the smoke user straight from storage — local runs only."""
+    try:
+        from fintech import db as fintech_db
+    except Exception:  # noqa: BLE001
+        return False
+    try:
+        row = fintech_db.user_by_email(SMOKE_EMAIL)
+        if row:
+            fintech_db.user_delete(row["id"])
+            return True
+    except Exception:  # noqa: BLE001
+        return False
+    return False
+
+
+def admin_login() -> bool:
+    if not ADMIN_PASSWORD:
+        return False
+    status, body = call("POST", "/api/admin/login", {"password": ADMIN_PASSWORD})
+    return status == 200 and isinstance(body, dict) and body.get("ok")
+
+
+def admin_find_user():
+    status, body = call("GET", "/api/admin/overview")
+    if status != 200 or not isinstance(body, dict):
+        return None
+    for u in body.get("users", []):
+        if (u.get("email") or "").lower() == SMOKE_EMAIL.lower():
+            return u
+    return None
+
+
+def bootstrap_member() -> tuple[bool, str]:
+    """Ensure a logged-in member session; returns (ok, method-note)."""
+    status, _ = call("POST", "/api/auth/login", {"email": SMOKE_EMAIL, "password": SMOKE_PASSWORD})
+    if status == 200:
+        return True, "tài khoản smoke có sẵn"
+    if not admin_login():
+        return False, "thiếu ADMIN_PASSWORD để tạo tài khoản smoke"
+    if is_local():
+        local_delete_smoke_user()
+    status, body = call("POST", "/api/admin/users",
+                        {"email": SMOKE_EMAIL, "password": SMOKE_PASSWORD, "name": "Smoke Test"})
+    if status == 409:
+        user = admin_find_user()
+        if user:
+            call("POST", f"/api/admin/users/{user['id']}/active", {"active": True})
+    elif status != 200:
+        return False, f"admin tạo user lỗi: {body}"
+    status, _ = call("POST", "/api/auth/login", {"email": SMOKE_EMAIL, "password": SMOKE_PASSWORD})
+    return status == 200, "admin API"
+
+
+def cleanup_smoke_user():
+    if is_local():
+        local_delete_smoke_user()
+        return
+    if admin_login():
+        user = admin_find_user()
+        if user:
+            call("POST", f"/api/admin/users/{user['id']}/active", {"active": False})
 
 
 def main():
@@ -45,9 +141,9 @@ def main():
 
     pages = {
         "/": ["Tổng quan", "FinViet Pro"],
-        "/phan-tich": ["Phân tích kỹ thuật", "price-chart"],
-        "/sang-loc": ["Tiêu chí sàng lọc", "criteria-grid"],
-        "/danh-muc": ["Quản lý vị thế", "alloc-bar"],
+        "/phan-tich": ["Phân tích kỹ thuật", "price-chart", "analysis-locked"],
+        "/sang-loc": ["Tiêu chí sàng lọc", "criteria-grid", "screener-locked"],
+        "/danh-muc": ["Quản lý vị thế", "alloc-bar", "portfolio-locked"],
         "/canh-bao": ["Trung tâm cảnh báo", "al-feed"],
         "/cai-dat": ["Quản trị vốn", "kelly"],
     }
@@ -60,6 +156,30 @@ def main():
     symbols = body.get("symbols", [])
     check("symbols listing", status == 200 and len(symbols) > 0,
           f"{len(symbols)} mã, vd: {symbols[0]['symbol'] if symbols else '—'}")
+
+    # member-only APIs must be locked for logged-out visitors
+    gated_checks = [
+        ("GET", "/api/analyze?symbol=FPT", None),
+        ("POST", "/api/kelly/calc", {"equity": 500000000, "entry": 60000, "stop": 57000}),
+        ("GET", "/api/screener/universes", None),
+        ("GET", "/api/screener/runs", None),
+        ("POST", "/api/screener/run", {}),
+        ("GET", "/api/portfolio/overview", None),
+        ("POST", "/api/portfolio/positions", {"symbol": "FPT", "quantity": 100, "avg_cost": 90000}),
+        ("POST", "/api/portfolio/watch", {"symbol": "FPT"}),
+        ("POST", "/api/portfolio/scan", {}),
+    ]
+    for method, path, gated_body in gated_checks:
+        st, payload = call(method, path, gated_body)
+        locked = st == 401 and isinstance(payload, dict) and payload.get("auth_required") is True
+        check(f"locked {method} {path}", locked, f"status={st}")
+
+    # bootstrap the member session used by the screener/analysis/portfolio checks
+    member, how = bootstrap_member()
+    check("member smoke login", member, f"{SMOKE_EMAIL} ({how})")
+    if not member:
+        print("\n== Dừng: không có phiên thành viên để chạy các mục được bảo vệ ==")
+        sys.exit(1)
 
     status, body = call("GET", "/api/analyze?symbol=FPT")
     payload = body if isinstance(body, dict) else {}
@@ -184,6 +304,10 @@ def main():
         if w.get("note") == "smoke-test":
             call("DELETE", f"/api/portfolio/watch/{w['id']}")
     check("watch cleanup", True, "")
+
+    # remove (local) or deactivate (remote) the temporary smoke account
+    cleanup_smoke_user()
+    check("smoke user cleanup", True, "local: đã xóa / remote: đã vô hiệu hóa")
 
     print(f"\n== Kết quả: {len(PASSED)} PASS / {len(FAILED)} FAIL ==")
     if FAILED:

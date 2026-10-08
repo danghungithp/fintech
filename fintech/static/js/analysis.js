@@ -11,7 +11,7 @@
   const FIB_LABELS = { 0.236: 'Fib 23.6%', 0.382: 'Fib 38.2%', 0.5: 'Fib 50% (vàng)', 0.618: 'Fib 61.8% (vàng)', 0.786: 'Fib 78.6%' };
 
   function showState(state) {
-    ['analysis-empty', 'analysis-loading', 'analysis-error', 'analysis-view'].forEach((id) => {
+    ['analysis-empty', 'analysis-locked', 'analysis-loading', 'analysis-error', 'analysis-view'].forEach((id) => {
       const node = el(id);
       if (node) node.classList.toggle('hidden', id !== state);
     });
@@ -21,6 +21,12 @@
     symbol = (symbol || '').trim().toUpperCase();
     if (!symbol) { toast('Vui lòng nhập mã cổ phiếu', 'warn'); return; }
     el('symbol-input').value = symbol;
+    const user = await App.getUser();
+    if (!user) {
+      App.wireLockLinks(`/phan-tich?symbol=${encodeURIComponent(symbol)}`);
+      showState('analysis-locked');
+      return;
+    }
     showState('analysis-loading');
     el('analyze-btn').disabled = true;
     try {
@@ -363,7 +369,7 @@
 
   /* ------------------------------------------------------------------ init */
 
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
     const params = new URLSearchParams(window.location.search);
     const initial = params.get('symbol');
     el('analyze-form').addEventListener('submit', (ev) => {
@@ -384,6 +390,8 @@
         toast(err.message, 'error', 'Theo dõi');
       }
     });
-    if (initial) analyze(initial, false);
+    if (initial) { analyze(initial, false); return; }
+    const user = await App.getUser();
+    if (!user) showState('analysis-locked');
   });
 })();

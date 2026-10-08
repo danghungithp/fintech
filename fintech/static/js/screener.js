@@ -251,6 +251,12 @@
   /* ---------------------------------------------------------------- init */
 
   document.addEventListener('DOMContentLoaded', async () => {
+    const user = await App.getUser();
+    if (!user) return; // keep the lock card visible
+
+    el('screener-locked').classList.add('hidden');
+    el('screener-app').classList.remove('hidden');
+
     setupTabs();
     el('run-btn').addEventListener('click', startRun);
     el('refresh-runs-btn').addEventListener('click', loadRecentRuns);

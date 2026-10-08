@@ -375,7 +375,13 @@
 
   /* ---------------------------------------------------------------- init */
 
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
+    const user = await App.getUser();
+    if (!user) return; // keep the lock card visible
+
+    el('portfolio-locked').classList.add('hidden');
+    el('portfolio-app').classList.remove('hidden');
+
     document.querySelectorAll('.tabs .tab').forEach((tab) => {
       tab.addEventListener('click', () => {
         document.querySelectorAll('.tabs .tab').forEach((t) => t.classList.toggle('active', t === tab));
