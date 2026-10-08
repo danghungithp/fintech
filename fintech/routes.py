@@ -510,7 +510,9 @@ def api_register_request():
     if not local or not domain or "." not in domain or " " in email or len(email) > 120:
         return api_error("Email không hợp lệ")
     try:
-        result = mailer.submit_registration_request(email, note)
+        result = mailer.submit_registration_request(
+            email, note, formsubmit_ok=bool(body.get("formsubmit_ok"))
+        )
     except Exception as exc:  # noqa: BLE001
         return api_error(f"Không gửi được yêu cầu: {exc}", 500)
     return jsonify(result)

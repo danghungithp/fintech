@@ -60,7 +60,8 @@ def is_authenticated() -> bool:
 
 
 def is_admin() -> bool:
-    return bool(session.get(SESSION_ADMIN))
+    """True for the ADMIN_PASSWORD session flag or a logged-in user with role ``admin``."""
+    return bool(session.get(SESSION_ADMIN)) or session.get(SESSION_ROLE) == "admin"
 
 
 def login_user(user: dict) -> None:
