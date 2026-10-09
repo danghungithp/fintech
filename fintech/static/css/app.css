@@ -328,8 +328,8 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 
 /* ------------------------------------------------- analysis page */
-.analysis-grid { display: grid; grid-template-columns: minmax(0, 1fr) 372px; gap: 16px; align-items: start; }
-.side-col { display: flex; flex-direction: column; gap: 16px; }
+.analysis-grid { display: flex; flex-direction: column; gap: 16px; align-items: stretch; }
+.side-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; align-items: start; }
 .chart-card { padding: 16px 16px 10px; }
 .chart-card .card-head { margin-bottom: 6px; }
 .chart { width: 100%; }
@@ -501,11 +501,10 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 
 /* ------------------------------------------------------- responsive */
 @media (max-width: 1380px) {
-  .analysis-grid { grid-template-columns: minmax(0, 1fr) 340px; }
 }
 @media (max-width: 1180px) {
   .grid-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .analysis-grid, .dash-grid { grid-template-columns: 1fr; }
+  .dash-grid { grid-template-columns: 1fr; }
   .criteria-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .journal-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .journal-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }

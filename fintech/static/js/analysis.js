@@ -54,6 +54,7 @@
     renderSignal(p);
     renderLevels(p);
     prefillKelly(p);
+    prefillValuation(p);
     renderFib(p);
     renderPivot(p);
     renderSupportsResistances(p);
@@ -163,6 +164,46 @@
     } catch (err) {
       toast(err.message, 'error', 'Kelly 1/2');
     }
+  }
+
+  function prefillValuation(p) {
+    const f = p.fundamentals || {};
+    el('val-eps').value = f.eps_ttm || '';
+    el('val-pe').value = f.pe || '';
+    el('val-div').value = f.dividend_ttm || 0;
+    el('val-g').value = 5;
+    el('val-r').value = 10;
+    el('val-result').classList.add('hidden');
+  }
+
+  function calcValuation() {
+    const eps = parseFloat(el('val-eps').value) || 0;
+    const pe = parseFloat(el('val-pe').value) || 0;
+    const div = parseFloat(el('val-div').value) || 0;
+    const g = parseFloat(el('val-g').value) || 0;
+    const r = parseFloat(el('val-r').value) || 0;
+
+    let resPE = '—', resDDM = '—', resDCF = '—';
+
+    if (eps > 0 && pe > 0) {
+      resPE = fmt.price(eps * pe) + ' đ';
+    }
+
+    if (div > 0 && r > g) {
+      const ddmVal = (div * (1 + g/100)) / ((r - g)/100);
+      resDDM = fmt.price(ddmVal) + ' đ';
+    }
+
+    if (eps > 0 && r > 0) {
+      // Graham formula: V = EPS * (8.5 + 2*g) * 4.4 / Y (using r as Y)
+      const dcfVal = eps * (8.5 + 2 * g) * 4.4 / r;
+      resDCF = fmt.price(dcfVal) + ' đ';
+    }
+
+    el('val-res-pe').textContent = resPE;
+    el('val-res-ddm').textContent = resDDM;
+    el('val-res-dcf').textContent = resDCF;
+    el('val-result').classList.remove('hidden');
   }
 
   function renderFib(p) {
@@ -381,6 +422,7 @@
       if (sym) analyze(sym, true);
     });
     el('k-calc').addEventListener('click', calcKelly);
+    el('val-calc').addEventListener('click', calcValuation);
     el('watch-btn').addEventListener('click', async () => {
       if (!current) return;
       try {

@@ -124,6 +124,29 @@
       <div id="k-result" class="hidden"></div>
     </div>
 
+    <div class="card" id="valuation-card">
+      <div class="card-head" style="margin-bottom:8px;">
+        <h3>Định giá cổ phiếu</h3>
+        <span class="chip">P/E · DDM · DCF</span>
+      </div>
+      <p class="sub mb-8">Ước tính giá trị nội tại dựa trên các phương pháp định giá cơ bản.</p>
+      <div class="kelly-grid">
+        <label class="field">EPS dự phóng (đ)<input id="val-eps" type="number" step="100" placeholder="VD: 5000"></label>
+        <label class="field">P/E mục tiêu (lần)<input id="val-pe" type="number" step="0.5" placeholder="VD: 15"></label>
+        <label class="field">Cổ tức tiền mặt (đ)<input id="val-div" type="number" step="100"></label>
+        <label class="field">Tăng trưởng kỳ vọng (%)<input id="val-g" type="number" step="0.1" value="5"></label>
+        <label class="field">Lãi suất chiết khấu (%)<input id="val-r" type="number" step="0.1" value="10"></label>
+      </div>
+      <button class="btn btn-primary mt-12" id="val-calc" style="width:100%;">Tính định giá</button>
+      <div id="val-result" class="hidden mt-12 kelly-result">
+        <div class="kv-list">
+          <div class="kv-row"><span class="k">Theo P/E</span><span class="v tnum" id="val-res-pe">—</span></div>
+          <div class="kv-row"><span class="k">Theo Cổ tức (DDM)</span><span class="v tnum" id="val-res-ddm">—</span></div>
+          <div class="kv-row"><span class="k">Theo Graham (DCF)</span><span class="v tnum" id="val-res-dcf">—</span></div>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-head" style="margin-bottom:8px;"><h3>Fibonacci</h3><span class="chip" id="fib-direction">—</span></div>
       <div class="kv-list" id="fib-kv"></div>
