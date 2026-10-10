@@ -55,23 +55,34 @@ def resolve_universe(universe: dict) -> list[str]:
     return ordered
 
 
-def _analyze_one(symbol: str, need_dividend: bool) -> dict:
+def _analyze_one(symbol: str) -> dict:
     candles, source = market.get_candles(symbol, days=300)
     payload = analysis.analyze_symbol(symbol, candles)
     price = payload["price"]
     closes = [c["c"] for c in candles]
     volumes = [float(c.get("v") or 0) for c in candles]
     avg_volume = sum(volumes[-20:]) / max(len(volumes[-20:]), 1)
+    
+    funds = market.get_fundamentals(symbol, with_events=False)
     dividend_yield = None
-    if need_dividend:
-        funds = market.get_fundamentals(symbol, with_events=False)
-        div_ps = (funds or {}).get("div_ps_ttm")
-        if div_ps and price:
-            dividend_yield = round(div_ps / price * 100, 2)
+    div_ps = (funds or {}).get("div_ps_ttm")
+    if div_ps and price:
+        dividend_yield = round(div_ps / price * 100, 2)
+        
     signal = payload["signal"]
     levels = payload["levels"]
     buy_zone = levels.get("buy_zone") or []
     indicators = payload["indicators"]
+
+    # CANSLIM Analysis
+    try:
+        from . import canslim
+        vn_candles, _ = market.get_candles("VNINDEX", days=300)
+        canslim_data = canslim.analyze_canslim(symbol, candles, vn_candles)
+        canslim_passed = canslim_data["passed"]
+    except Exception:
+        canslim_passed = False
+
     return {
         "symbol": symbol,
         "signal": signal["code"],
@@ -82,6 +93,10 @@ def _analyze_one(symbol: str, need_dividend: bool) -> dict:
         "rsi": indicators.get("rsi"),
         "avg_volume": round(avg_volume, 0),
         "dividend_yield": dividend_yield,
+        "rev_growth_qoq": (funds or {}).get("rev_growth_qoq"),
+        "rev_growth_yoy": (funds or {}).get("rev_growth_yoy"),
+        "profit_growth_qoq": (funds or {}).get("profit_growth_qoq"),
+        "profit_growth_yoy": (funds or {}).get("profit_growth_yoy"),
         "buy_zone_low": buy_zone[0] if len(buy_zone) > 1 else None,
         "buy_zone_high": buy_zone[1] if len(buy_zone) > 1 else None,
         "stop_loss": levels.get("stop_loss"),
@@ -90,6 +105,7 @@ def _analyze_one(symbol: str, need_dividend: bool) -> dict:
         "fib_direction": (payload.get("fib") or {}).get("direction"),
         "reasons": (payload.get("reasons") or [])[:4],
         "source": source,
+        "canslim_passed": canslim_passed,
     }
 
 
@@ -110,12 +126,30 @@ def _passes(row: dict, criteria: dict) -> bool:
     if price_max is not None and price_max > 0 and (row["price"] or 0) > price_max:
         return False
     min_div = _num(criteria.get("min_dividend_yield"))
+    exclude_unknown = criteria.get("exclude_unknown_dividend", True)
     if min_div is not None and min_div > 0:
-        exclude_unknown = criteria.get("exclude_unknown_dividend", True)
         if row["dividend_yield"] is None:
             return not exclude_unknown
         if row["dividend_yield"] < min_div:
             return False
+
+    def check_growth(metric, crit_key):
+        val = _num(criteria.get(crit_key))
+        if val is not None:
+            if row.get(metric) is None:
+                return not exclude_unknown
+            if row[metric] < val:
+                return False
+        return True
+
+    if not check_growth("rev_growth_qoq", "min_rev_growth_qoq"): return False
+    if not check_growth("rev_growth_yoy", "min_rev_growth_yoy"): return False
+    if not check_growth("profit_growth_qoq", "min_profit_growth_qoq"): return False
+    if not check_growth("profit_growth_yoy", "min_profit_growth_yoy"): return False
+
+    if criteria.get("require_canslim") and not row.get("canslim_passed"):
+        return False
+
     return True
 
 
@@ -126,8 +160,6 @@ def _execute(run_id: int, universe: dict, criteria: dict) -> None:
         max_symbols = int(_num(criteria.get("max_symbols")) or settings.get("screener_max_symbols") or 250)
         max_symbols = max(5, min(max_symbols, 1200))
         symbols = symbols[:max_symbols]
-        min_div = _num(criteria.get("min_dividend_yield"))
-        need_dividend = bool(min_div and min_div > 0)
         db.screen_run_update(run_id, {"total": len(symbols)})
 
         processed = 0
@@ -143,7 +175,7 @@ def _execute(run_id: int, universe: dict, criteria: dict) -> None:
             batch = []
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-            futures = {pool.submit(_analyze_one, symbol, need_dividend): symbol for symbol in symbols}
+            futures = {pool.submit(_analyze_one, symbol): symbol for symbol in symbols}
             for future in as_completed(futures):
                 processed += 1
                 try:
@@ -175,6 +207,10 @@ def _execute(run_id: int, universe: dict, criteria: dict) -> None:
                                         "reasons": row["reasons"],
                                         "fib": row["fib_direction"],
                                         "source": row["source"],
+                                        "rev_growth_qoq": row.get("rev_growth_qoq"),
+                                        "rev_growth_yoy": row.get("rev_growth_yoy"),
+                                        "profit_growth_qoq": row.get("profit_growth_qoq"),
+                                        "profit_growth_yoy": row.get("profit_growth_yoy"),
                                     },
                                     ensure_ascii=False,
                                 ),
@@ -293,13 +329,17 @@ def export_csv(run_id: int) -> str:
     buffer.write("\ufeff")  # BOM for Excel
     headers = [
         "Ma", "Tin hieu", "Diem", "Gia", "%Ngay", "RSI", "KL TB 20 phien",
-        "Ty suat co tuc (%)", "Vung mua duoi", "Vung mua tren", "Cat lo", "Muc tieu 1", "R/R",
+        "Ty suat co tuc (%)", "DT Quy (%)", "DT Nam (%)", "LN Quy (%)", "LN Nam (%)",
+        "Vung mua duoi", "Vung mua tren", "Cat lo", "Muc tieu 1", "R/R",
     ]
     buffer.write(",".join(headers) + "\n")
     for row in results:
+        extra = row.get("extra") or {}
         cells = [
             row["symbol"], row["signal_label"], row["score"], row["price"], row["change_pct"],
             row["rsi"], row["avg_volume"], row["dividend_yield"],
+            extra.get("rev_growth_qoq"), extra.get("rev_growth_yoy"),
+            extra.get("profit_growth_qoq"), extra.get("profit_growth_yoy"),
             row["buy_zone_low"], row["buy_zone_high"], row["stop_loss"], row["target1"], row["risk_reward"],
         ]
         buffer.write(",".join("" if c is None else str(c) for c in cells) + "\n")

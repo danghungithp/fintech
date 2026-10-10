@@ -48,19 +48,27 @@
     }
   }
 
+  function safeRun(fn, name) {
+    try {
+      fn();
+    } catch (err) {
+      console.error('Lỗi render [' + name + ']:', err);
+    }
+  }
+
   function renderAll(p) {
-    renderHeader(p);
-    renderChart(p);
-    renderSignal(p);
-    renderLevels(p);
-    prefillKelly(p);
-    prefillValuation(p);
-    renderFib(p);
-    renderPivot(p);
-    renderSupportsResistances(p);
-    renderIndicators(p);
-    renderBacktest(p);
-    renderDividends(p);
+    safeRun(() => renderHeader(p), 'renderHeader');
+    safeRun(() => renderChart(p), 'renderChart');
+    safeRun(() => renderSignal(p), 'renderSignal');
+    safeRun(() => renderLevels(p), 'renderLevels');
+    safeRun(() => prefillKelly(p), 'prefillKelly');
+    safeRun(() => prefillValuation(p), 'prefillValuation');
+    safeRun(() => renderFib(p), 'renderFib');
+    safeRun(() => renderPivot(p), 'renderPivot');
+    safeRun(() => renderSupportsResistances(p), 'renderSupportsResistances');
+    safeRun(() => renderIndicators(p), 'renderIndicators');
+    safeRun(() => renderBacktest(p), 'renderBacktest');
+    safeRun(() => renderDividends(p), 'renderDividends');
   }
 
   function renderHeader(p) {
@@ -407,6 +415,16 @@
       }
     }
   }
+
+  /* ------------------------------------------- Trend Following (Ed Thorp) */
+
+
+
+
+
+
+
+
 
   /* ------------------------------------------------------------------ init */
 

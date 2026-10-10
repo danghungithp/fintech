@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Day Trading Phái sinh{% endblock %}
+{% block header_title %}Day Trading Phái sinh{% endblock %}
+
+{% block content %}
+<section class="card mb-16">
+  <div class="flex-between flex-wrap">
+    <div>
+      <h2>Phân tích phái sinh VN30F1M</h2>
+      <p class="sub">Nhập mã cổ phiếu để xem phân tích</p>
+    </div>
+    <form class="symbol-form" id="tool-form" autocomplete="off">
+      <input class="input" id="tool-symbol" list="global-symbol-suggest" data-symbol-input
+             placeholder="Mã CK (VD: VN30F1M)" style="width:200px;">
+      <button class="btn btn-primary" type="submit">Phân tích</button>
+    </form>
+  </div>
+</section>
+
+<section class="card module-state " id="m-derivatives">
+  <div class="card-head">
+    <div>
+      <h3 class="flex"><span class="icon">⚡</span>Day Trading Phái Sinh VN30F (Ed Thorp)</h3>
+      <p class="sub">Quản trị rủi ro cực hạn (1/20 Kelly), đánh thuận xu hướng và đảo chiều.</p>
+    </div>
+    <button class="btn btn-sm btn-ghost mod-toggle">Thu gọn</button>
+  </div>
+  <div class="mod-content">
+    <div class="tf-controls">
+      <label class="field">
+        <span>Vốn ký quỹ (đồng)</span>
+        <input type="number" id="deriv-margin" step="10000000" value="100000000" style="width:160px;">
+      </label>
+      <label class="field">
+        <span>Rủi ro tối đa/lệnh (%)</span>
+        <input type="number" id="deriv-loss" step="0.1" value="1.0" style="width:120px;">
+      </label>
+      <button class="btn btn-primary btn-sm" id="deriv-recalc" type="button" style="margin-left:auto;">
+        Tính toán
+      </button>
+    </div>
+    <div class="mod-loading mt-16"><span class="spinner"></span> Đang phân tích dữ liệu Intraday 5M...</div>
+    <div class="mod-error  mt-16">Không phân tích được Phái sinh.</div>
+    <div class="mod-body  mt-16">
+      
+      <div class="alert tone-warn " id="deriv-danger-zone">
+        <strong>⚠️ CẢNH BÁO THỜI GIAN:</strong> Hiện tại đang trong khung giờ nguy hiểm (9:00-9:15 hoặc 14:15-14:30), biên độ giật rất hỗn loạn do thuật toán quỹ tái cơ cấu. Đứng ngoài quan sát!
+      </div>
+      
+      <div class="dash-grid mt-16" style="grid-template-columns:1fr 1fr;">
+        <div class="card" style="border:1px solid var(--border);box-shadow:none;">
+          <h4 style="margin-top:0;">1. Chỉ báo cốt lõi (5M)</h4>
+          <ul class="data-list mt-8">
+            <li><span>Giá hiện tại:</span><strong id="deriv-price"></strong></li>
+            <li><span>Đường VWAP:</span><strong id="deriv-vwap"></strong></li>
+            <li><span>RSI (9):</span><strong id="deriv-rsi"></strong></li>
+            <li><span>Pivot (P / S1 / R1):</span><strong id="deriv-pivots"></strong></li>
+          </ul>
+        </div>
+        
+        <div class="card" style="border:1px solid var(--border);box-shadow:none;">
+          <h4 style="margin-top:0;">2. Tín hiệu & Quản trị (1/20 Kelly)</h4>
+          <div class="mt-8">
+            <span class="badge" id="deriv-signal" style="font-size:14px;padding:4px 8px;"></span>
+          </div>
+          <ul class="data-list mt-8">
+            <li><span>Setup:</span><strong id="deriv-setup"></strong></li>
+            <li><span>Khối lượng tối đa:</span><strong id="deriv-contracts"></strong></li>
+            <li><span>Điểm Cắt lỗ (Stop):</span><strong class="neg" id="deriv-stop"></strong></li>
+            <li><span>Mục tiêu (Target):</span><strong class="pos" id="deriv-target"></strong></li>
+            <li><span>Risk/Reward (R:R):</span><strong id="deriv-rr"></strong></li>
+          </ul>
+        </div>
+      </div>
+      
+      <ul class="reason-list mt-16">
+        <li class="r-good"><strong>Quy tắc 2 lệnh thua:</strong> Nếu bạn thua 2 lệnh liên tiếp trong sáng, dừng ngay giao dịch trong ngày hôm đó (tránh Revenge Trading).</li>
+        <li class="r-good"><strong>No Overnight:</strong> Bắt buộc đóng toàn bộ vị thế trước 14h45. Tuyệt đối không giữ qua đêm.</li>
+      </ul>
+      
+    </div>
+  </div>
+</section>
+
+
+<section class="card mt-16" id="backtest-section" class="hidden">
+  <div class="card-head">
+    <div>
+      <h3>Chạy Backtest (Kiểm thử quá khứ)</h3>
+      <p class="sub">Mô phỏng giao dịch theo quy tắc chiến lược để đo lường hiệu suất thực tế.</p>
+    </div>
+  </div>
+  <form id="bt-form" class="mt-12 flex" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
+    <label class="field"><span>Từ ngày</span><input type="date" id="bt-start" value="2023-01-01" class="input"></label>
+    <label class="field"><span>Đến ngày</span><input type="date" id="bt-end" class="input"></label>
+    <button type="submit" class="btn btn-primary" id="bt-btn">Chạy Backtest</button>
+  </form>
+  <div id="bt-result" class="hidden mt-16">
+    <div class="grid-stats">
+      <div class="stat-card">
+        <span class="label">Tổng số lệnh</span>
+        <div class="value tnum" id="bt-total">0</div>
+      </div>
+      <div class="stat-card">
+        <span class="label">Tỷ lệ Thắng (Win Rate)</span>
+        <div class="value tnum" id="bt-winrate">0%</div>
+      </div>
+      <div class="stat-card">
+        <span class="label">Tổng lợi nhuận (Lũy kế)</span>
+        <div class="value tnum" id="bt-return">0%</div>
+      </div>
+      <div class="stat-card">
+        <span class="label">Mức lỗ tối đa/lệnh</span>
+        <div class="value tnum" id="bt-maxloss">0%</div>
+      </div>
+    </div>
+    <h4 class="mt-16 mb-8">Lịch sử Lệnh (Gần nhất)</h4>
+    <div class="table-wrap">
+      <table class="data-table" id="bt-table">
+        <thead>
+          <tr>
+            <th>Ngày vào</th><th>Loại lệnh</th><th class="num">Giá vào</th><th>Ngày ra</th><th class="num">Giá ra</th><th class="num">Lãi/Lỗ</th><th>Lý do</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/derivatives.js') }}?v=2"></script>
+{% endblock %}

@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Trend Following - Phân tích xu hướng{% endblock %}
+{% block header_title %}Trend Following{% endblock %}
+
+{% block content %}
+<section class="card mb-16">
+  <div class="flex-between flex-wrap">
+    <div>
+      <h2>Phân tích chiến lược Trend Following</h2>
+      <p class="sub">Nhập mã cổ phiếu để xem phân tích</p>
+    </div>
+    <form class="symbol-form" id="tool-form" autocomplete="off">
+      <input class="input" id="tool-symbol" list="global-symbol-suggest" data-symbol-input
+             placeholder="Mã CK (VD: FPT)" style="width:200px;">
+      <button class="btn btn-primary" type="submit">Phân tích</button>
+    </form>
+  </div>
+</section>
+
+<section id="trend-following-section" class="card tf-card ">
+  <header class="card-head flex-between flex-wrap" style="margin-bottom:16px;">
+    <div>
+      <div class="flex items-center" style="gap:10px;">
+        <h2>Chiến lược Trend Following — Ed Thorp (Chuẩn hóa cho TTCK VN)</h2>
+        <span class="chip" style="background:rgba(99,102,241,0.18);color:#a5b4fc;border:1px solid rgba(99,102,241,0.3);">5 Bước Chiến Lược</span>
+      </div>
+      <p class="sub" style="margin-top:4px;">
+        Kết hợp bộ lọc Cơ bản &amp; Xu hướng dài hạn, giải ngân tại điểm kiểm định (retest) hỗ trợ, định cỡ <b>1/10 Kelly</b>, phòng vệ rủi ro kẹt <b>T+2.5</b> và chốt lời theo <b>Trailing Stop</b>.
+      </p>
+    </div>
+    <div id="tf-status-badge"></div>
+  </header>
+
+  <!-- Interactive controls -->
+  <div class="tf-controls">
+    <label class="field">
+      <span>Vốn đầu tư NAV (đồng)</span>
+      <input type="number" id="tf-nav-input" step="10000000" style="width:160px;">
+    </label>
+    <label class="field">
+      <span>Tăng trưởng EPS quý gần nhất (%)</span>
+      <input type="number" id="tf-eps-input" step="1" style="width:120px;" placeholder="VD: 18">
+    </label>
+    <label class="field" style="flex-direction:row;align-items:center;padding-top:18px;gap:8px;">
+      <input type="checkbox" id="tf-macro-checkbox" checked>
+      <span style="color:#e8eefb;">Ngành có vĩ mô dẫn dắt</span>
+    </label>
+    <button class="btn btn-primary btn-sm" id="tf-recalc-btn" type="button" style="margin-left:auto;">
+      Cập nhật tính toán chiến lược
+    </button>
+  </div>
+
+  <!-- 5 Steps Grid -->
+  <div class="tf-steps-grid">
+    <!-- Bước 1 -->
+    <div class="tf-step-box" id="tf-box-step1">
+      <div class="tf-step-header">
+        <h4><span class="tf-step-num">1</span> Bộ lọc Xu hướng &amp; Cơ bản</h4>
+        <span class="tf-badge" id="tf-step1-badge">—</span>
+      </div>
+      <div class="kv-list" id="tf-step1-kv"></div>
+      <div class="hint mt-8" id="tf-step1-note"></div>
+    </div>
+
+    <!-- Bước 2 -->
+    <div class="tf-step-box" id="tf-box-step2">
+      <div class="tf-step-header">
+        <h4><span class="tf-step-num">2</span> Điểm mua (Entry Trigger)</h4>
+        <span class="tf-badge" id="tf-step2-badge">—</span>
+      </div>
+      <div class="kv-list" id="tf-step2-kv"></div>
+      <ul class="reason-list mt-8" id="tf-step2-reasons"></ul>
+    </div>
+
+    <!-- Bước 3 -->
+    <div class="tf-step-box" id="tf-box-step3">
+      <div class="tf-step-header">
+        <h4><span class="tf-step-num">3</span> Định cỡ vị thế 1/10 Kelly</h4>
+        <span class="chip">Ed Thorp</span>
+      </div>
+      <div class="kv-list" id="tf-step3-kv"></div>
+      <ul class="reason-list mt-8" id="tf-step3-notes"></ul>
+    </div>
+
+    <!-- Bước 4 -->
+    <div class="tf-step-box" id="tf-box-step4">
+      <div class="tf-step-header">
+        <h4><span class="tf-step-num">4</span> Điểm cắt lỗ &amp; Quản trị T+2.5</h4>
+        <span class="chip" style="color:var(--down);">Phòng vệ rủi ro T+</span>
+      </div>
+      <div class="kv-list" id="tf-step4-kv"></div>
+      <div class="tf-tranches-wrap" id="tf-tranches-wrap"></div>
+      <p class="hint mt-8" id="tf-step4-defense"></p>
+    </div>
+
+    <!-- Bước 5 -->
+    <div class="tf-step-box" id="tf-box-step5" style="grid-column: span 2;">
+      <div class="tf-step-header">
+        <h4><span class="tf-step-num">5</span> Chốt lời theo xu hướng (Trailing Stop)</h4>
+        <span class="tf-badge" id="tf-step5-badge">—</span>
+      </div>
+      <div class="grid grid-2" style="gap:16px;">
+        <div class="kv-list" id="tf-step5-kv"></div>
+        <div>
+          <div class="pattern-item hit" style="height:100%;">
+            <div class="pattern-top"><strong>Lời khuyên hành động</strong></div>
+            <p id="tf-step5-advice" style="margin-top:6px;font-size:13px;line-height:1.5;"></p>
+            <div class="mt-8 small muted" id="tf-step5-rules"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bảng tóm tắt khung chiến lược -->
+  <div class="card-head" style="margin-top:20px;margin-bottom:8px;">
+    <h3>Bảng tóm tắt khung chiến lược tại Việt Nam</h3>
+  </div>
+  <div class="tf-summary-table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:18%;">Thành phần</th>
+          <th style="width:38%;">Chi tiết áp dụng tại TTCK Việt Nam</th>
+          <th style="width:30%;">Dữ liệu thực tế mã hiện tại</th>
+          <th style="width:14%;text-align:center;">Đánh giá</th>
+        </tr>
+      </thead>
+      <tbody id="tf-summary-tbody"></tbody>
+    </table>
+  </div>
+</section>
+
+
+<section class="card mt-16" id="backtest-section" class="hidden">
+  <div class="card-head">
+    <div>
+      <h3>Chạy Backtest (Kiểm thử quá khứ)</h3>
+      <p class="sub">Mô phỏng giao dịch theo quy tắc chiến lược để đo lường hiệu suất thực tế.</p>
+    </div>
+  </div>
+  <form id="bt-form" class="mt-12 flex" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
+    <label class="field"><span>Từ ngày</span><input type="date" id="bt-start" value="2023-01-01" class="input"></label>
+    <label class="field"><span>Đến ngày</span><input type="date" id="bt-end" class="input"></label>
+    <button type="submit" class="btn btn-primary" id="bt-btn">Chạy Backtest</button>
+  </form>
+  <div id="bt-result" class="hidden mt-16">
+    <div class="grid-stats">
+      <div class="stat-card">
+        <span class="label">Tổng số lệnh</span>
+        <div class="value tnum" id="bt-total">0</div>
+      </div>
+      <div class="stat-card">
+        <span class="label">Tỷ lệ Thắng (Win Rate)</span>
+        <div class="value tnum" id="bt-winrate">0%</div>
+      </div>
+      <div class="stat-card">
+        <span class="label">Tổng lợi nhuận (Lũy kế)</span>
+        <div class="value tnum" id="bt-return">0%</div>
+      </div>
+      <div class="stat-card">
+        <span class="label">Mức lỗ tối đa/lệnh</span>
+        <div class="value tnum" id="bt-maxloss">0%</div>
+      </div>
+    </div>
+    <h4 class="mt-16 mb-8">Lịch sử Lệnh (Gần nhất)</h4>
+    <div class="table-wrap">
+      <table class="data-table" id="bt-table">
+        <thead>
+          <tr>
+            <th>Ngày vào</th><th>Loại lệnh</th><th class="num">Giá vào</th><th>Ngày ra</th><th class="num">Giá ra</th><th class="num">Lãi/Lỗ</th><th>Lý do</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/trend_following.js') }}?v=2"></script>
+{% endblock %}

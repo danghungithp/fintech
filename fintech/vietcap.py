@@ -112,14 +112,15 @@ def fetch_vietcap_group(group: str, timeout: int = 20) -> list[str]:
     return symbols
 
 
-def _parse_timestamp(value) -> str | None:
+def _parse_timestamp(value, is_intraday: bool = False) -> str | None:
     try:
         ts = float(value)
     except (TypeError, ValueError):
         return None
     if ts > 10**11:  # milliseconds
         ts /= 1000.0
-    return datetime.fromtimestamp(ts, _ICT).date().isoformat()
+    dt = datetime.fromtimestamp(ts, _ICT)
+    return dt.isoformat() if is_intraday else dt.date().isoformat()
 
 
 def _fallback_dates(count: int) -> list[str]:
@@ -165,8 +166,9 @@ def fetch_history(symbol: str, count: int = 400, timeframe: str = "ONE_DAY", tim
         opens, highs, lows, closes, volumes = (s[-length:] for s in series)
         raw_times = entry.get("t") or entry.get("time") or []
         dates: list[str] = []
+        is_intraday = timeframe not in ("ONE_DAY", "D", "1D")
         if isinstance(raw_times, list) and len(raw_times) >= length:
-            dates = [_parse_timestamp(ts) or "" for ts in raw_times[-length:]]
+            dates = [_parse_timestamp(ts, is_intraday=is_intraday) or "" for ts in raw_times[-length:]]
         if len(dates) != length or not all(dates):
             dates = _fallback_dates(length)
         candles = []

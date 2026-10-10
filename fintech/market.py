@@ -61,6 +61,10 @@ def get_fundamentals(symbol: str, *, force: bool = False, with_events: bool = Tr
         "rating": details.get("rating"),
         "target_price": _safe_float(details.get("targetPrice")),
         "sector": details.get("sectorVn") or details.get("sector"),
+        "rev_growth_qoq": _safe_float(details.get("revenueGrowthQoQ")),
+        "rev_growth_yoy": _safe_float(details.get("revenueGrowthYoY")),
+        "profit_growth_qoq": _safe_float(details.get("profitGrowthQoQ")),
+        "profit_growth_yoy": _safe_float(details.get("profitGrowthYoY")),
         "extra": {
             "issue_share": _safe_float(details.get("issueShare")),
             "foreign_pct": _safe_float(details.get("foreignerPercentage")),

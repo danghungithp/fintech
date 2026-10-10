@@ -21,6 +21,8 @@
       const f = d === 2 ? nf2 : d === 1 ? nf1 : nf0;
       return f.format(v);
     },
+    number(v, d = 0) { return this.num(v, d); },
+    volume(v) { return this.vol(v); },
     price(v) { return this.num(v, v !== null && Math.abs(v) < 100 ? 2 : 0); },
     pct(v, signed = true) {
       if (v === null || v === undefined || Number.isNaN(v)) return '—';
@@ -201,7 +203,12 @@
   function getUser(force = false) {
     if (!userPromise || force) {
       userPromise = fetchJSON('/api/auth/me')
-        .then((data) => (data && data.user) || null)
+        .then((data) => {
+          if (!data) return null;
+          if (data.user) return data.user;
+          if (data.admin) return { id: 'admin', name: 'Quản trị viên', role: 'admin' };
+          return null;
+        })
         .catch(() => null);
     }
     return userPromise;
@@ -259,5 +266,13 @@
     setupMobileMenu();
   });
 
-  window.App = { fmt, fetchJSON, postJSON, toast, signalBadge, scoreBar, severityBadge, modal, closeModal, refreshAlertCount, getUser, wireLockLinks };
+  
+  function showState(modId, state) {
+    const root = document.getElementById(modId);
+    if (!root) return;
+    root.classList.remove('mod-loading-state', 'mod-error-state', 'mod-body-state');
+    if (state) root.classList.add(`mod-${state}-state`);
+  }
+
+  window.App = { showState, fmt, fetchJSON, postJSON, toast, signalBadge, scoreBar, severityBadge, modal, closeModal, refreshAlertCount, getUser, wireLockLinks };
 })();

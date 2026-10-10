@@ -5,7 +5,7 @@ from flask import Blueprint, Response, jsonify, render_template, request
 
 from . import analysis as analysis_engine
 from . import auth, candlesticks, journal, mailer
-from . import db, kelly, market, portfolio, screener, vietcap
+from . import db, kelly, market, portfolio, screener, trend_following, vietcap
 from .config import INDEX_SYMBOLS, UNIVERSE_GROUPS, EXCHANGES, ON_VERCEL, SITE_URL
 
 bp = Blueprint("main", __name__)
@@ -37,6 +37,21 @@ def page_analysis():
 @bp.get("/sang-loc")
 def page_screener():
     return render_template("screener.html", active="screener")
+
+@bp.get("/trend-following")
+@auth.login_required
+def page_trend_following():
+    return render_template("trend_following.html", active="trend_following")
+
+@bp.get("/canslim")
+@auth.login_required
+def page_canslim():
+    return render_template("canslim.html", active="canslim")
+
+@bp.get("/phai-sinh")
+@auth.login_required
+def page_derivatives():
+    return render_template("derivatives.html", active="derivatives")
 
 
 @bp.get("/danh-muc")
@@ -262,6 +277,100 @@ def api_kelly_calc():
     except Exception as exc:  # noqa: BLE001
         return api_error(f"Lỗi tính toán Kelly: {exc}", 500)
 
+
+@bp.post("/api/trend-following/calc")
+@auth.login_required
+def api_trend_following_calc():
+    body = request.get_json(silent=True) or {}
+    symbol = (body.get("symbol") or "").strip().upper()
+    if not symbol:
+        return api_error("Thiếu mã cổ phiếu (symbol)")
+    settings = dict(db.get_settings())
+    custom_equity = body.get("equity")
+    if custom_equity is not None:
+        try:
+            settings["equity"] = float(custom_equity)
+        except (TypeError, ValueError):
+            pass
+    eps_growth = body.get("eps_growth")
+    if eps_growth is not None:
+        try:
+            eps_growth = float(eps_growth)
+        except (TypeError, ValueError):
+            eps_growth = None
+    macro_confirmed = body.get("macro_confirmed")
+    if macro_confirmed is not None:
+        macro_confirmed = bool(macro_confirmed)
+    days = _int_arg("days", int(settings.get("history_days") or 400))
+    try:
+        candles, _ = market.get_candles(symbol, days=days, cache_hours=float(settings.get("cache_hours") or 6))
+        fundamentals = market.get_fundamentals(symbol)
+        result = trend_following.analyze_trend_following(
+            symbol,
+            candles,
+            fundamentals=fundamentals,
+            settings=settings,
+            user_eps_growth=eps_growth,
+            macro_confirmed=macro_confirmed,
+        )
+        return jsonify(result)
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Lỗi tính toán Trend Following: {exc}", 500)
+
+
+@bp.post("/api/canslim/calc")
+@auth.login_required
+def api_canslim_calc():
+    body = request.get_json(silent=True) or {}
+    symbol = (body.get("symbol") or "").strip().upper()
+    if not symbol:
+        return api_error("Thiếu mã cổ phiếu (symbol)")
+    settings = db.get_settings()
+    days = _int_arg("days", int(settings.get("history_days") or 400))
+    try:
+        from . import canslim
+        candles, _ = market.get_candles(symbol, days=days, cache_hours=float(settings.get("cache_hours") or 6))
+        vnindex_candles, _ = market.get_candles("VNINDEX", days=days, cache_hours=float(settings.get("cache_hours") or 6))
+        
+        result = canslim.analyze_canslim(symbol, candles, vnindex_candles)
+        return jsonify(result)
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Lỗi phân tích CANSLIM: {exc}", 500)
+
+@bp.post("/api/derivatives/calc")
+@auth.login_required
+def api_derivatives_calc():
+    body = request.get_json(silent=True) or {}
+    margin = float(body.get("margin") or 100000000)
+    max_loss = float(body.get("max_loss") or 1.0)
+    try:
+        from . import derivatives
+        result = derivatives.analyze_derivatives(margin=margin, max_loss_pct=max_loss)
+        return jsonify(result)
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Lỗi phân tích phái sinh: {exc}", 500)
+
+
+@bp.post("/api/backtest/<strategy>")
+@auth.login_required
+def api_backtest(strategy: str):
+    body = request.get_json(silent=True) or {}
+    symbol = (body.get("symbol") or "VN30F1M").strip().upper()
+    start_date = body.get("start_date") or "2020-01-01"
+    end_date = body.get("end_date") or "2099-12-31"
+    try:
+        from . import backtest
+        if strategy == "canslim":
+            result = backtest.run_canslim_backtest(symbol, start_date, end_date)
+        elif strategy == "trend_following":
+            result = backtest.run_trendfollowing_backtest(symbol, start_date, end_date)
+        elif strategy == "derivatives":
+            result = backtest.run_derivatives_backtest(start_date, end_date)
+        else:
+            return api_error("Chiến lược không hợp lệ")
+        return jsonify(result)
+    except Exception as exc:  # noqa: BLE001
+        return api_error(f"Lỗi chạy backtest: {exc}", 500)
 
 # -------------------------------------------------------------- screener
 

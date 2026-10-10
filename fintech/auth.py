@@ -46,6 +46,13 @@ def check_admin_password(password: str) -> bool:
 def current_user() -> dict | None:
     """The logged-in user snapshot carried in the signed session cookie."""
     if not session.get(SESSION_UID):
+        if is_admin():
+            return {
+                "id": "admin",
+                "email": "admin@finviet.local",
+                "name": "Quản trị viên",
+                "role": "admin",
+            }
         return None
     return {
         "id": session.get(SESSION_UID),
@@ -56,7 +63,7 @@ def current_user() -> dict | None:
 
 
 def is_authenticated() -> bool:
-    return current_user() is not None
+    return current_user() is not None or is_admin()
 
 
 def is_admin() -> bool:

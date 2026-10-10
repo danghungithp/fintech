@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from . import indicators as ta
+from . import trend_following
 from .config import (
     SIGNAL_BUY,
     SIGNAL_META,
@@ -633,6 +634,13 @@ def analyze_symbol(symbol: str, candles: list[dict], settings: dict | None = Non
             "dividend_events": fundamentals.get("dividend_events") or [],
         }
 
+    try:
+        tf_payload = trend_following.analyze_trend_following(
+            symbol, candles, fundamentals=fundamentals_payload, settings=settings
+        )
+    except Exception:
+        tf_payload = None
+
     payload = {
         "symbol": symbol.upper(),
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -669,6 +677,7 @@ def analyze_symbol(symbol: str, candles: list[dict], settings: dict | None = Non
         "markers": backtest["markers"],
         "score_history": backtest["score_history"],
         "fundamentals": fundamentals_payload,
+        "trend_following": tf_payload,
         "thresholds": {
             "strong_buy": SIGNAL_STRONG_BUY,
             "buy": SIGNAL_BUY,

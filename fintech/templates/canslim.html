@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}CANSLIM - Phân tích kỹ thuật{% endblock %}
+{% block header_title %}CANSLIM Kỹ thuật{% endblock %}
+
+{% block content %}
+<section class="card mb-16">
+  <div class="flex-between flex-wrap">
+    <div>
+      <h2>Phân tích theo tiêu chí CANSLIM</h2>
+      <p class="sub">Nhập mã cổ phiếu để xem phân tích</p>
+    </div>
+    <form class="symbol-form" id="tool-form" autocomplete="off">
+      <input class="input" id="tool-symbol" list="global-symbol-suggest" data-symbol-input
+             placeholder="Mã CK (VD: FPT)" style="width:200px;">
+      <button class="btn btn-primary" type="submit">Phân tích</button>
+    </form>
+  </div>
+</section>
+
+<section class="card module-state" id="m-canslim">
+  <div class="card-head">
+    <div>
+      <h3 class="flex"><span class="icon">📊</span>CANSLIM Kỹ thuật (Ed. O'Neil)</h3>
+      <p class="sub">Nhận diện mẫu hình kinh điển, đếm ngày phân phối VN-Index và điểm mua Pivot.</p>
+    </div>
+    <button class="btn btn-sm btn-ghost mod-toggle">Thu gọn</button>
+  </div>
+  <div class="mod-content">
+    <div class="mod-loading"><span class="spinner"></span> Đang tải...</div>
+    <div class="mod-error ">Không phân tích được CANSLIM.</div>
+    <div class="mod-body ">
+      <div class="dash-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="card" style="border:1px solid var(--border);box-shadow:none;">
+          <h4 style="margin-top:0;">1. Thị trường chung (M)</h4>
+          <p class="sub">Xu hướng VN-Index và Đếm ngày phân phối</p>
+          <div class="mt-8">
+            <span class="badge" id="canslim-market-status" style="font-size:13px;padding:4px 8px;"></span>
+          </div>
+          <ul class="data-list mt-8">
+            <li><span>Trạng thái:</span><strong id="canslim-is-uptrend"></strong></li>
+            <li><span>Ngày phân phối (4 tuần):</span><strong id="canslim-dist-days"></strong></li>
+            <li><span>VN-Index / MA50 / MA200:</span><strong id="canslim-market-prices"></strong></li>
+          </ul>
+        </div>
+        
+        <div class="card" style="border:1px solid var(--border);box-shadow:none;">
+          <h4 style="margin-top:0;">2. Mẫu hình (Chart Pattern)</h4>
+          <p class="sub">Nhận diện nền giá tích lũy</p>
+          <div class="mt-8">
+            <span class="badge tone-info" id="canslim-pattern-name" style="font-size:13px;padding:4px 8px;"></span>
+          </div>
+          <ul class="data-list mt-8">
+            <li><span>Độ sâu điều chỉnh:</span><strong id="canslim-pattern-depth"></strong></li>
+            <li><span>Điểm Pivot (Đỉnh nền/Tay cầm):</span><strong id="canslim-pivot"></strong></li>
+          </ul>
+        </div>
+
+        <div class="card" style="border:1px solid var(--border);box-shadow:none;">
+          <h4 style="margin-top:0;">3. Điểm mua chuẩn (Pivot Breakout)</h4>
+          <ul class="data-list">
+            <li><span>Giá hiện tại / Pivot:</span><strong id="canslim-price-pivot"></strong></li>
+            <li><span>Đột phá giá (Breakout):</span><strong id="canslim-is-breakout"></strong></li>
+            <li><span>Đột phá Vol (≥ 1.5x V20):</span><strong id="canslim-vol-breakout"></strong></li>
+            <li><span>Vùng mua an toàn (< 5%):</span><strong id="canslim-buy-zone"></strong></li>
+            <li><span>Tình trạng FOMO:</span><strong id="canslim-is-fomo"></strong></li>
+          </ul>
+          <div class="alert tone-up mt-8 " id="canslim-buy-alert">
+            <strong>ĐIỂM MUA CHUẨN</strong>: Đạt đủ tiêu chí thị trường, mẫu hình và Breakout.
+          </div>
+        </div>
+
+        <div class="card" style="border:1px solid var(--border);box-shadow:none;">
+          <h4 style="margin-top:0;">4. Quản trị rủi ro (Risk Mgmt)</h4>
+          <ul class="data-list">
+            <li><span>Cắt lỗ cứng (-7.5% từ Pivot):</span><strong class="neg" id="canslim-stop-loss"></strong></li>
+            <li><span>Chốt lời mục tiêu (+25%):</span><strong class="pos" id="canslim-target"></strong></li>
+          </ul>
+          <p class="sub mt-8"><strong>Quy tắc giữ siêu cổ phiếu:</strong> Nếu giá tăng >20% trong <3 tuần từ điểm mua, nắm giữ ít nhất 8 tuần.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<section class="card mt-16" id="backtest-section" class="hidden">
+  <div class="card-head">
+    <div>
+      <h3>Chạy Backtest (Kiểm thử quá khứ)</h3>
+      <p class="sub">Mô phỏng giao dịch theo quy tắc chiến lược để đo lường hiệu suất thực tế.</p>
+    </div>
+  </div>
+  <form id="bt-form" class="mt-12 flex" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
+    <label class="field"><span>Từ ngày</span><input type="date" id="bt-start" value="2023-01-01" class="input"></label>
+    <label class="field"><span>Đến ngày</span><input type="date" id="bt-end" class="input"></label>
+    <button type="submit" class="btn btn-primary" id="bt-btn">Chạy Backtest</button>
+  </form>
+  <div id="bt-result" class="hidden mt-16">
+    <div class="grid-stats">
+      <div class="stat-card">
+        <span class="label">Tổng số lệnh</span>
+        <div class="value tnum" id="bt-total">0</div>
+      </div>
+      <div class="stat-card">
+        <span class="label">Tỷ lệ Thắng (Win Rate)</span>
+        <div class="value tnum" id="bt-winrate">0%</div>
+      </div>
+      <div class="stat-card">
+        <span class="label">Tổng lợi nhuận (Lũy kế)</span>
+        <div class="value tnum" id="bt-return">0%</div>
+      </div>
+      <div class="stat-card">
+        <span class="label">Mức lỗ tối đa/lệnh</span>
+        <div class="value tnum" id="bt-maxloss">0%</div>
+      </div>
+    </div>
+    <h4 class="mt-16 mb-8">Lịch sử Lệnh (Gần nhất)</h4>
+    <div class="table-wrap">
+      <table class="data-table" id="bt-table">
+        <thead>
+          <tr>
+            <th>Ngày vào</th><th>Loại lệnh</th><th class="num">Giá vào</th><th>Ngày ra</th><th class="num">Giá ra</th><th class="num">Lãi/Lỗ</th><th>Lý do</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/canslim.js') }}?v=2"></script>
+{% endblock %}

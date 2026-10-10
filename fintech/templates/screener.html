@@ -81,9 +81,26 @@
       Giá tối đa (đ)
       <input class="input" type="number" id="crit-price-max" placeholder="Không giới hạn" step="1000" min="0">
     </label>
+    <label class="field">
+      Tăng trưởng DT Quý (%)
+      <input class="input" type="number" id="crit-rev-qoq" placeholder="Không giới hạn" step="1">
+    </label>
+    <label class="field">
+      Tăng trưởng DT Năm (%)
+      <input class="input" type="number" id="crit-rev-yoy" placeholder="Không giới hạn" step="1">
+    </label>
+    <label class="field">
+      Tăng trưởng LN Quý (%)
+      <input class="input" type="number" id="crit-profit-qoq" placeholder="Không giới hạn" step="1">
+    </label>
+    <label class="field">
+      Tăng trưởng LN Năm (%)
+      <input class="input" type="number" id="crit-profit-yoy" placeholder="Không giới hạn" step="1">
+    </label>
     <label class="field span-2" style="justify-content:flex-end;">
-      Bộ lọc cổ tức
-      <label class="check-row"><input type="checkbox" id="crit-exclude-unknown" checked> Loại các mã chưa có dữ liệu cổ tức</label>
+      Bộ lọc bổ sung
+      <label class="check-row"><input type="checkbox" id="crit-exclude-unknown" checked> Loại các mã thiếu dữ liệu (cổ tức, tăng trưởng)</label>
+      <label class="check-row"><input type="checkbox" id="crit-canslim"> Chỉ lấy mã đạt điểm mua CANSLIM</label>
     </label>
   </div>
 </section>
@@ -117,12 +134,14 @@
           <tr>
             <th>Mã</th><th>Tín hiệu</th><th class="num">Điểm</th><th class="num">Giá</th>
             <th class="num">%Ngày</th><th class="num">RSI</th><th class="num">KL TB20</th>
-            <th class="num">Cổ tức</th><th class="num">Vùng mua</th><th class="num">Cắt lỗ</th>
+            <th class="num">Cổ tức</th>
+            <th class="num">DT Quý</th><th class="num">LN Quý</th>
+            <th class="num">Vùng mua</th><th class="num">Cắt lỗ</th>
             <th class="num">Mục tiêu</th><th class="num">R:R</th>
           </tr>
         </thead>
         <tbody>
-          <tr class="no-hover"><td colspan="12"><div class="empty-state"><strong>Chưa có kết quả</strong>Chọn tiêu chí và bấm "Bắt đầu sàng lọc".</div></td></tr>
+          <tr class="no-hover"><td colspan="14"><div class="empty-state"><strong>Chưa có kết quả</strong>Chọn tiêu chí và bấm "Bắt đầu sàng lọc".</div></td></tr>
         </tbody>
       </table>
     </div>

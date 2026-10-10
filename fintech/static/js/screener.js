@@ -68,6 +68,11 @@
       price_min: num('crit-price-min'),
       price_max: num('crit-price-max'),
       max_symbols: num('crit-max-symbols'),
+      min_rev_growth_qoq: num('crit-rev-qoq'),
+      min_rev_growth_yoy: num('crit-rev-yoy'),
+      min_profit_growth_qoq: num('crit-profit-qoq'),
+      min_profit_growth_yoy: num('crit-profit-yoy'),
+      require_canslim: el('crit-canslim').checked,
     };
   }
 
@@ -162,7 +167,7 @@
 
     const tbody = el('results-table').querySelector('tbody');
     if (!rows.length) {
-      tbody.innerHTML = '<tr class="no-hover"><td colspan="12"><div class="empty-state"><strong>Không có mã nào đạt tiêu chí</strong>Thử nới lỏng điều kiện (giảm điểm tối thiểu, bỏ lọc cổ tức...) hoặc chọn nhóm lớn hơn.</div></td></tr>';
+      tbody.innerHTML = '<tr class="no-hover"><td colspan="14"><div class="empty-state"><strong>Không có mã nào đạt tiêu chí</strong>Thử nới lỏng điều kiện (giảm điểm tối thiểu, bỏ lọc cổ tức...) hoặc chọn nhóm lớn hơn.</div></td></tr>';
       return;
     }
     tbody.innerHTML = rows.map((r) => `
@@ -175,6 +180,8 @@
         <td class="num">${r.rsi != null ? fmt.num(r.rsi, 1) : '—'}</td>
         <td class="num">${fmt.vol(r.avg_volume)}</td>
         <td class="num ${r.dividend_yield != null ? 'pos' : ''}">${r.dividend_yield != null ? r.dividend_yield + '%' : '—'}</td>
+        <td class="num ${fmt.tone(r.extra?.rev_growth_qoq)}">${r.extra?.rev_growth_qoq != null ? r.extra.rev_growth_qoq + '%' : '—'}</td>
+        <td class="num ${fmt.tone(r.extra?.profit_growth_qoq)}">${r.extra?.profit_growth_qoq != null ? r.extra.profit_growth_qoq + '%' : '—'}</td>
         <td class="num">${zoneText(r.buy_zone_low, r.buy_zone_high)}</td>
         <td class="num neg">${fmt.price(r.stop_loss)}</td>
         <td class="num pos">${fmt.price(r.target1)}</td>
@@ -197,6 +204,10 @@
     const criteria = run.criteria || {};
     const chips = [];
     if (criteria.min_dividend_yield > 0) chips.push(`Cổ tức ≥ ${criteria.min_dividend_yield}%`);
+    if (criteria.min_rev_growth_qoq != null) chips.push(`DT Quý ≥ ${criteria.min_rev_growth_qoq}%`);
+    if (criteria.min_rev_growth_yoy != null) chips.push(`DT Năm ≥ ${criteria.min_rev_growth_yoy}%`);
+    if (criteria.min_profit_growth_qoq != null) chips.push(`LN Quý ≥ ${criteria.min_profit_growth_qoq}%`);
+    if (criteria.min_profit_growth_yoy != null) chips.push(`LN Năm ≥ ${criteria.min_profit_growth_yoy}%`);
     if (criteria.signals && criteria.signals.length) chips.push(criteria.signals.length > 2 ? 'Mọi tín hiệu' : criteria.signals.map((s) => ({ STRONG_BUY: 'MUA MẠNH', BUY: 'MUA', HOLD: 'GIỮ', SELL: 'BÁN', STRONG_SELL: 'BÁN MẠNH' }[s] || s)).join(', '));
     return `<div class="alert-item" data-run="${run.id}" style="cursor:pointer;border-left-color:${run.status === 'RUNNING' ? 'var(--info)' : run.status === 'ERROR' ? 'var(--down)' : 'var(--up)'};">
       <div class="a-body">
